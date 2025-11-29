@@ -4,22 +4,69 @@ import ipaddress
 from scapy.all import sniff, get_if_list, IP, IPv6, TCP, UDP, ICMP, ICMPv6EchoRequest, ARP, DNS, DNSQR, DNSRR, Raw
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 import signal
 import threading
+import logging
+import time
+
+# --- Configure Logging ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # --- Create logs folder inside script's directory ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOGS_DIR = os.path.join(SCRIPT_DIR, 'logs')
+PENDING_DIR = os.path.join(LOGS_DIR, 'pending_upload')  # Files ready for upload
 os.makedirs(LOGS_DIR, exist_ok=True)
-print(f"Logs folder created at {LOGS_DIR}")
+os.makedirs(PENDING_DIR, exist_ok=True)
+logger.info(f"Logs folder created at {LOGS_DIR}")
 
-# --- Generate new file paths ---
-def generate_file_paths():
+# --- Configuration ---
+SAVE_INTERVAL = 5  # Save CSV every 5 seconds for real-time detection
+
+# --- File Generation Functions ---
+def generate_csv_filename():
+    """Generate timestamped CSV filename"""
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    txt_file = os.path.join(LOGS_DIR, f'packets_{timestamp}.txt')
-    csv_file = os.path.join(LOGS_DIR, f'packets_{timestamp}.csv')
-    json_file = os.path.join(LOGS_DIR, f'packets_{timestamp}.json')
-    return txt_file, csv_file, json_file
+    return os.path.join(PENDING_DIR, f'packets_{timestamp}.csv')
+
+def save_to_csv_atomic(packets, base_filename):
+    """
+    Save packets to CSV file atomically with .ready marker
+    Uses temp file + rename for atomic operation
+    """
+    if not packets:
+        logger.warning("No packets to save")
+        return
+    
+    # Write to temporary file first
+    temp_file = base_filename + '.tmp'
+    ready_marker = base_filename + '.ready'
+    
+    try:
+        # Write to temp file
+        with open(temp_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=packets[0].keys())
+            writer.writeheader()
+            writer.writerows(packets)
+        
+        # Atomic rename (this is instantaneous)
+        os.replace(temp_file, base_filename)
+        
+        # Create ready marker to signal sender.py
+        Path(ready_marker).touch()
+        
+        logger.info(f"✓ Saved {len(packets)} packets to {os.path.basename(base_filename)}")
+        
+    except Exception as e:
+        logger.error(f"Failed to save CSV: {e}")
+        # Clean up temp file if it exists
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
 
 # --- TCP Flags Decoder ---
 def decode_tcp_flags(flag_value):
@@ -231,94 +278,110 @@ def packet_summary(pkt, interface):
 
     return summary
 
-# --- Write Functions ---
-def write_txt(packets, txt_file):
-    with open(txt_file, 'w') as f:
-        for p in packets:
-            f.write(str(p) + '\n')
-    print(f"Wrote {len(packets)} packets to {txt_file}")
-
-def write_csv(packets, csv_file):
-    with open(csv_file, 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=packets[0].keys())
-        writer.writeheader()
-        writer.writerows(packets)
-    print(f"Wrote {len(packets)} packets to {csv_file}")
-
-def write_json(packets, json_file):
-    with open(json_file, 'w') as f:
-        json.dump(packets, f, indent=4)
-    print(f"Wrote {len(packets)} packets to {json_file}")
-
-# --- Validation Functions ---
-def validate_ip(ip):
-    try:
-        ipaddress.ip_address(ip)
-        return True
-    except ValueError:
-        return False
-
-def validate_packet(p):
-    if p.get('src_ip') and p.get('dst_ip'):
-        return validate_ip(p['src_ip']) and validate_ip(p['dst_ip'])
-    return True
-
-def read_csv_and_validate(csv_file):
-    with open(csv_file) as f:
-        reader = csv.DictReader(f)
-        packets = [row for row in reader]
-    valid = [p for p in packets if validate_packet(p)]
-    print(f"Valid packets: {len(valid)}/{len(packets)}")
-
 # --- Graceful exit ---
 running = True
 
 def signal_handler(sig, frame):
     global running
-    print("Stopping capture...")
+    logger.info("Stopping capture...")
     running = False
 
 signal.signal(signal.SIGINT, signal_handler)
 
-# --- Main Execution ---
-def sniff_interface(interface, packets_buffer):
-    print(f"Started sniffing on {interface}")
+# --- Packet Buffer Manager ---
+class PacketBuffer:
+    """Manages packet buffering and periodic saves"""
+    def __init__(self, save_interval):
+        self.save_interval = save_interval
+        self.buffer = []
+        self.last_save_time = datetime.now()
+        self.lock = threading.Lock()
+        self.start_save_timer()
+    
+    def add_packet(self, packet):
+        """Add packet to buffer"""
+        with self.lock:
+            self.buffer.append(packet)
+    
+    def save_buffer(self):
+        """Save current buffer to file"""
+        with self.lock:
+            if not self.buffer:
+                return
+            
+            packets_to_save = self.buffer.copy()
+            self.buffer.clear()
+            self.last_save_time = datetime.now()
+        
+        # Save in background thread
+        csv_file = generate_csv_filename()
+        save_thread = threading.Thread(
+            target=save_to_csv_atomic,
+            args=(packets_to_save, csv_file),
+            daemon=True
+        )
+        save_thread.start()
+    
+    def periodic_save(self):
+        """Periodically save buffer to CSV"""
+        while running:
+            time.sleep(1)
+            
+            time_since_last_save = (datetime.now() - self.last_save_time).total_seconds()
+            
+            if self.buffer and time_since_last_save >= self.save_interval:
+                logger.info(f"Auto-saving {len(self.buffer)} packets")
+                self.save_buffer()
+    
+    def start_save_timer(self):
+        """Start background thread for periodic saving"""
+        save_thread = threading.Thread(target=self.periodic_save, daemon=True)
+        save_thread.start()
+
+def sniff_interface(interface, buffer):
+    """Sniff packets on interface and add to buffer"""
+    logger.info(f"Started sniffing on {interface}")
+    
     def handle_packet(pkt):
         summary = packet_summary(pkt, interface)
         if summary:
-            packets_buffer.append(summary)
+            buffer.add_packet(summary)
 
     while running:
         sniff(prn=handle_packet, store=0, iface=interface, timeout=1)
 
 def main():
-    print("Starting continuous packet capture on all interfaces...")
-    packets_buffer = []
-    start_time = datetime.now()
+    logger.info("Starting packet sniffer (storage-only mode)...")
+    logger.info(f"Files will be saved to: {PENDING_DIR}")
+    logger.info(f"Save interval: {SAVE_INTERVAL} seconds")
+    
+    # Create packet buffer
+    packet_buffer = PacketBuffer(SAVE_INTERVAL)
+    
+    # Get network interfaces
     interfaces = get_if_list()
-    print(f"Interfaces detected: {interfaces}")
+    logger.info(f"Interfaces detected: {interfaces}")
 
     # Start a thread for each interface
     threads = []
     for iface in interfaces:
-        t = threading.Thread(target=sniff_interface, args=(iface, packets_buffer), daemon=True)
+        t = threading.Thread(target=sniff_interface, args=(iface, packet_buffer), daemon=True)
         t.start()
         threads.append(t)
 
+    # Keep main thread alive
+    logger.info("Sniffer running. Press Ctrl+C to stop.")
     while running:
-        now = datetime.now()
-        if (now - start_time) >= timedelta(minutes=1):
-            if packets_buffer:
-                txt_file, csv_file, json_file = generate_file_paths()
-                write_txt(packets_buffer, txt_file)
-                write_csv(packets_buffer, csv_file)
-                write_json(packets_buffer, json_file)
-                read_csv_and_validate(csv_file)
-                packets_buffer.clear()
-            start_time = now
-
-    for t in threads:
-        t.join()
+        time.sleep(1)
+    
+    # Save final buffer before exit
+    logger.info("Saving final buffer...")
+    packet_buffer.save_buffer()
+    
+    # Wait briefly for save to complete
+    time.sleep(1)
+    
+    logger.info("Sniffer stopped")
 
 if __name__ == '__main__':
     main()

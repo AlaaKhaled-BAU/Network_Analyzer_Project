@@ -1,6 +1,8 @@
-fastapi 
-uvicorn 
-sqlalchemy 
-pandas 
-joblib 
-scikit-learn 
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+pandas
+joblib
+scikit-learn
+python-multipart
