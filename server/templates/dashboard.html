@@ -1,218 +1,610 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Traffic Analytics - NetGuardian</title>
-<link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Analytics - NetGuardian</title>
+    <link rel="icon" type="image/x-icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
 </head>
+
 <body class="bg-gray-900 text-white">
 
-<header class="bg-gray-800 shadow-lg">
-    <div class="container mx-auto px-4 py-4 flex justify-between items-center">
-        <div class="flex items-center space-x-3">
-            <a href="#" class="flex items-center space-x-3">
-                <div class="bg-blue-500 p-2 rounded-lg">
-                    <i data-feather="shield" class="w-6 h-6"></i>
+    <header class="bg-gray-800 shadow-lg">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <a href="#" onclick="switchView('dashboard');return false;" class="flex items-center space-x-3">
+                    <div class="bg-blue-500 p-2 rounded-lg">
+                        <i data-feather="shield" class="w-6 h-6"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold">NetGuardian</h1>
+                </a>
+            </div>
+            <nav class="flex space-x-6">
+                <a href="#" id="nav-dashboard" onclick="switchView('dashboard');return false;"
+                    class="text-blue-400 font-medium transition">Dashboard</a>
+                <a href="#" id="nav-packets" onclick="switchView('packets');return false;"
+                    class="text-gray-400 hover:text-white transition">Packets</a>
+                <a href="#" id="nav-alerts" onclick="switchView('alerts');return false;"
+                    class="text-gray-400 hover:text-white transition">Alerts</a>
+                <a href="#" id="nav-analytics" onclick="switchView('analytics');return false;"
+                    class="text-gray-400 hover:text-white transition">Analytics</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-8">
+
+        <!-- Connection Error Message -->
+        <div id="connectionError" class="hidden bg-red-900 border border-red-500 text-white px-4 py-3 rounded-lg mb-6">
+            <div class="flex items-center">
+                <i data-feather="alert-triangle" class="w-5 h-5 mr-2"></i>
+                <span class="font-semibold">Connection Lost</span> - Unable to reach the server. Retrying...
+            </div>
+        </div>
+
+        <!-- ==================== DASHBOARD VIEW ==================== -->
+        <div id="view-dashboard">
+            <h1 class="text-3xl font-bold mb-6">Traffic Analytics</h1>
+
+            <!-- Key Metrics -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
+                    <h3 class="text-gray-400">Peak Traffic</h3>
+                    <p id="peakTraffic" class="text-2xl font-bold mt-2">--</p>
                 </div>
-                <h1 class="text-2xl font-bold">NetGuardian</h1>
-            </a>
+                <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
+                    <h3 class="text-gray-400">Avg Traffic</h3>
+                    <p id="avgTraffic" class="text-2xl font-bold mt-2">--</p>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
+                    <h3 class="text-gray-400">Top Protocol</h3>
+                    <p id="topProtocol" class="text-2xl font-bold mt-2">--</p>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
+                    <h3 class="text-gray-400">Top Talker</h3>
+                    <p id="topTalker" class="text-2xl font-bold mt-2">--</p>
+                </div>
+            </div>
+
+            <!-- Traffic Over Time -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
+                    <h2 class="text-xl font-bold mb-4">Traffic Volume Over Time</h2>
+                    <canvas id="trafficChart" height="250"></canvas>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
+                    <h2 class="text-xl font-bold mb-4">Protocol Distribution</h2>
+                    <canvas id="protocolChart" height="250"></canvas>
+                </div>
+            </div>
+
+            <!-- Top Talkers -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
+                    <h2 class="text-xl font-bold mb-4">Top Source IPs</h2>
+                    <div id="topSourcesContainer" class="space-y-4"></div>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
+                    <h2 class="text-xl font-bold mb-4">Top Destination IPs</h2>
+                    <div id="topDestContainer" class="space-y-4"></div>
+                </div>
+            </div>
         </div>
-        <nav class="flex space-x-6">
-            <a href="#" class="text-gray-400 hover:text-white transition">Dashboard</a>
-            <a href="#" class="text-gray-400 hover:text-white transition">Packets</a>
-            <a href="#" class="text-gray-400 hover:text-white transition">Alerts</a>
-            <a href="#" class="text-blue-400 font-medium">Analytics</a>
-        </nav>
-    </div>
-</header>
 
-<main class="container mx-auto px-4 py-8">
+        <!-- ==================== PACKETS VIEW ==================== -->
+        <div id="view-packets" class="hidden">
+            <h1 class="text-3xl font-bold mb-6">Recent Packets</h1>
 
-    <h1 class="text-3xl font-bold mb-6">Traffic Analytics</h1>
-
-    <!-- Key Metrics -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
-            <h3 class="text-gray-400">Peak Traffic</h3>
-            <p id="peakTraffic" class="text-2xl font-bold mt-2">--</p>
+            <div class="bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-700">
+                            <tr>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                    Time</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                    Source IP</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                    Dest IP</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                    Protocol</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                    Length</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                                    Flags</th>
+                            </tr>
+                        </thead>
+                        <tbody id="packetsTableBody" class="divide-y divide-gray-700">
+                            <!-- Packets will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-        <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
-            <h3 class="text-gray-400">Avg Traffic</h3>
-            <p id="avgTraffic" class="text-2xl font-bold mt-2">--</p>
+
+        <!-- ==================== ALERTS VIEW ==================== -->
+        <div id="view-alerts" class="hidden">
+            <h1 class="text-3xl font-bold mb-6">Security Alerts</h1>
+
+            <div id="alertsContainer" class="space-y-4">
+                <!-- Alert cards will be inserted here -->
+            </div>
         </div>
-        <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
-            <h3 class="text-gray-400">Top Protocol</h3>
-            <p id="topProtocol" class="text-2xl font-bold mt-2">--</p>
+
+        <!-- ==================== ANALYTICS VIEW ==================== -->
+        <div id="view-analytics" class="hidden">
+            <h1 class="text-3xl font-bold mb-6">Advanced Analytics</h1>
+
+            <!-- Bytes per Second Chart -->
+            <div class="bg-gray-800 rounded-xl p-6 shadow-lg mb-8">
+                <h2 class="text-xl font-bold mb-4">Bytes per Second Over Time</h2>
+                <canvas id="bytesChart" height="250"></canvas>
+            </div>
+
+            <!-- Top Talkers by MAC -->
+            <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
+                <h2 class="text-xl font-bold mb-4">Top Talkers (by Source MAC)</h2>
+                <div id="topTalkersContainer" class="space-y-4"></div>
+            </div>
         </div>
-        <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
-            <h3 class="text-gray-400">Top Talker</h3>
-            <p id="topTalker" class="text-2xl font-bold mt-2">--</p>
-        </div>
-    </div>
 
-    <!-- Traffic Over Time -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
-            <h2 class="text-xl font-bold mb-4">Traffic Volume Over Time</h2>
-            <canvas id="trafficChart" height="250"></canvas>
-        </div>
-        <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
-            <h2 class="text-xl font-bold mb-4">Protocol Distribution</h2>
-            <canvas id="protocolChart" height="250"></canvas>
-        </div>
-    </div>
+    </main>
 
-    <!-- Top Talkers -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
-            <h2 class="text-xl font-bold mb-4">Top Source IPs</h2>
-            <div id="topSourcesContainer" class="space-y-4"></div>
-        </div>
-        <div class="bg-gray-800 rounded-xl p-6 shadow-lg">
-            <h2 class="text-xl font-bold mb-4">Top Destination IPs</h2>
-            <div id="topDestContainer" class="space-y-4"></div>
-        </div>
-    </div>
+    <script>
+        feather.replace();
 
-</main>
+        // ==================== STATE MANAGEMENT ====================
+        let currentView = 'dashboard';
+        let refreshInterval = null;
+        let chartInstances = {};
 
-<script>
-feather.replace();
+        // ==================== VIEW SWITCHING ====================
+        function switchView(viewName) {
+            // Hide all views
+            document.querySelectorAll('[id^="view-"]').forEach(view => {
+                view.classList.add('hidden');
+            });
 
-// ---------------- Fetch Key Metrics ----------------
-async function fetchMetrics() {
-    const res = await fetch('/api/alltraffic');
-    const data = await res.json();
+            // Show selected view
+            document.getElementById(`view-${viewName}`).classList.remove('hidden');
 
-    if(data.length == 0) return;
+            // Update navigation styling
+            document.querySelectorAll('[id^="nav-"]').forEach(nav => {
+                nav.classList.remove('text-blue-400', 'font-medium');
+                nav.classList.add('text-gray-400');
+            });
+            document.getElementById(`nav-${viewName}`).classList.remove('text-gray-400');
+            document.getElementById(`nav-${viewName}`).classList.add('text-blue-400', 'font-medium');
 
-    const packetCounts = data.map(d => d.packet_count);
-    const avgTraffic = Math.round(packetCounts.reduce((a,b)=>a+b,0)/packetCounts.length);
-    const peakTraffic = Math.max(...packetCounts);
+            currentView = viewName;
 
-    const protocolCounts = {};
-    data.forEach(d => protocolCounts[d.protocol] = (protocolCounts[d.protocol]||0)+1);
-    const topProtocol = Object.keys(protocolCounts).reduce((a,b)=> protocolCounts[a]>protocolCounts[b]?a:b);
+            // Refresh the new view immediately
+            refreshCurrentView();
+        }
 
-    const topTalkerObj = data.reduce((a,b)=> a.packet_count>b.packet_count?a:b);
+        // ==================== ERROR HANDLING ====================
+        function showConnectionError(show = true) {
+            const errorEl = document.getElementById('connectionError');
+            if (show) {
+                errorEl.classList.remove('hidden');
+            } else {
+                errorEl.classList.add('hidden');
+            }
+        }
 
-    document.getElementById('peakTraffic').innerText = peakTraffic + ' packets';
-    document.getElementById('avgTraffic').innerText = avgTraffic + ' packets';
-    document.getElementById('topProtocol').innerText = topProtocol;
-    document.getElementById('topTalker').innerText = topTalkerObj.source_mac;
-}
+        async function fetchWithErrorHandling(url) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                const data = await res.json();
+                showConnectionError(false);
+                return data;
+            } catch (error) {
+                console.error('Fetch error:', error);
+                showConnectionError(true);
+                return null;
+            }
+        }
 
-// ---------------- Top Sources ----------------
-async function fetchTopSources() {
-    const res = await fetch('/api/alltraffic');
-    const data = await res.json();
-    const container = document.getElementById('topSourcesContainer');
-    container.innerHTML = '';
-    const topSources = data.sort((a,b)=>b.packet_count-a.packet_count).slice(0,5);
-    topSources.forEach(item => {
-        const div = document.createElement('div');
-        div.innerHTML = `
+        // ==================== DASHBOARD VIEW FUNCTIONS ====================
+        async function fetchMetrics() {
+            const data = await fetchWithErrorHandling('/api/alltraffic');
+            if (!data || data.length === 0) return;
+
+            const packetCounts = data.map(d => d.packet_count || 0);
+            const avgTraffic = Math.round(packetCounts.reduce((a, b) => a + b, 0) / packetCounts.length);
+            const peakTraffic = Math.max(...packetCounts);
+
+            const protocolCounts = {};
+            data.forEach(d => protocolCounts[d.protocol] = (protocolCounts[d.protocol] || 0) + 1);
+            const topProtocol = Object.keys(protocolCounts).reduce((a, b) => protocolCounts[a] > protocolCounts[b] ? a : b, 'N/A');
+
+            const topTalkerObj = data.reduce((a, b) => (a.packet_count || 0) > (b.packet_count || 0) ? a : b, { source_mac: 'N/A' });
+
+            document.getElementById('peakTraffic').innerText = peakTraffic + ' packets';
+            document.getElementById('avgTraffic').innerText = avgTraffic + ' packets';
+            document.getElementById('topProtocol').innerText = topProtocol;
+            document.getElementById('topTalker').innerText = topTalkerObj.source_mac;
+        }
+
+        async function fetchTopSources() {
+            const data = await fetchWithErrorHandling('/api/alltraffic');
+            if (!data) return;
+
+            const container = document.getElementById('topSourcesContainer');
+            container.innerHTML = '';
+            const topSources = data.sort((a, b) => (b.packet_count || 0) - (a.packet_count || 0)).slice(0, 5);
+
+            if (topSources.length === 0) {
+                container.innerHTML = '<p class="text-gray-400">No data available</p>';
+                return;
+            }
+
+            const maxCount = Math.max(...topSources.map(item => item.packet_count || 1));
+
+            topSources.forEach(item => {
+                const div = document.createElement('div');
+                const percentage = ((item.packet_count || 0) / maxCount) * 100;
+                div.innerHTML = `
             <div class="flex justify-between mb-1">
-                <span>${item.source_mac}</span>
-                <span>${item.packet_count} packets</span>
+                <span>${item.source_mac || 'N/A'}</span>
+                <span>${item.packet_count || 0} packets</span>
             </div>
             <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
-                <div class="h-full bg-blue-500 rounded-full" style="width: ${Math.min(item.packet_count,100)}%"></div>
+                <div class="h-full bg-blue-500 rounded-full" style="width: ${percentage}%"></div>
             </div>
         `;
-        container.appendChild(div);
-    });
-}
+                container.appendChild(div);
+            });
+        }
 
-// ---------------- Top Destinations ----------------
-async function fetchTopDest() {
-    const res = await fetch('/api/alltraffic');
-    const data = await res.json();
-    const container = document.getElementById('topDestContainer');
-    container.innerHTML = '';
-    const topDest = data.sort((a,b)=>b.packet_count-a.packet_count).slice(0,5);
-    topDest.forEach(item => {
-        const div = document.createElement('div');
-        div.innerHTML = `
+        async function fetchTopDest() {
+            const data = await fetchWithErrorHandling('/api/alltraffic');
+            if (!data) return;
+
+            const container = document.getElementById('topDestContainer');
+            container.innerHTML = '';
+            const topDest = data.sort((a, b) => (b.packet_count || 0) - (a.packet_count || 0)).slice(0, 5);
+
+            if (topDest.length === 0) {
+                container.innerHTML = '<p class="text-gray-400">No data available</p>';
+                return;
+            }
+
+            const maxCount = Math.max(...topDest.map(item => item.packet_count || 1));
+
+            topDest.forEach(item => {
+                const div = document.createElement('div');
+                const percentage = ((item.packet_count || 0) / maxCount) * 100;
+                div.innerHTML = `
             <div class="flex justify-between mb-1">
-                <span>${item.dest_ip}</span>
-                <span>${item.packet_count} packets</span>
+                <span>${item.dest_ip || 'N/A'}</span>
+                <span>${item.packet_count || 0} packets</span>
             </div>
             <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
-                <div class="h-full bg-green-500 rounded-full" style="width: ${Math.min(item.packet_count,100)}%"></div>
+                <div class="h-full bg-green-500 rounded-full" style="width: ${percentage}%"></div>
             </div>
         `;
-        container.appendChild(div);
-    });
-}
-
-// ---------------- Traffic Chart ----------------
-let trafficChartInstance;
-async function fetchTrafficChart() {
-    const res = await fetch('/api/alltraffic');
-    const data = await res.json();
-    const labels = data.map(d=>d.dest_ip);
-    const counts = data.map(d=>d.packet_count);
-    const ctx = document.getElementById('trafficChart').getContext('2d');
-
-    if(trafficChartInstance) trafficChartInstance.destroy();
-    trafficChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Packet Count',
-                data: counts,
-                borderColor: 'rgb(75, 192, 192)',
-                backgroundColor: 'rgba(75,192,192,0.2)',
-                tension: 0.3
-            }]
+                container.appendChild(div);
+            });
         }
-    });
-}
 
-// ---------------- Protocol Chart ----------------
-let protocolChartInstance;
-async function fetchProtocolChart() {
-    const res = await fetch('/api/alltraffic');
-    const data = await res.json();
-    const protocols = {};
-    data.forEach(d=>protocols[d.protocol]=(protocols[d.protocol]||0)+1);
-    const labels = Object.keys(protocols);
-    const values = Object.values(protocols);
-    const ctx = document.getElementById('protocolChart').getContext('2d');
+        async function fetchTrafficChart() {
+            const data = await fetchWithErrorHandling('/api/alltraffic');
+            if (!data) return;
 
-    if(protocolChartInstance) protocolChartInstance.destroy();
-    protocolChartInstance = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Protocol Count',
-                data: values,
-                backgroundColor: ['#3b82f6','#10b981','#facc15','#a78bfa','#f87171']
-            }]
+            const labels = data.slice(0, 20).map((d, idx) => `Flow ${idx + 1}`);
+            const counts = data.slice(0, 20).map(d => d.packet_count || 0);
+            const ctx = document.getElementById('trafficChart').getContext('2d');
+
+            if (chartInstances.traffic) chartInstances.traffic.destroy();
+            chartInstances.traffic = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Packet Count',
+                        data: counts,
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75,192,192,0.2)',
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { labels: { color: '#fff' } }
+                    },
+                    scales: {
+                        y: { ticks: { color: '#fff' }, grid: { color: '#374151' } },
+                        x: { ticks: { color: '#fff' }, grid: { color: '#374151' } }
+                    }
+                }
+            });
         }
-    });
-}
 
-// ---------------- Refresh All ----------------
-async function refreshAll() {
-    await fetchMetrics();
-    await fetchTopSources();
-    await fetchTopDest();
-    await fetchTrafficChart();
-    await fetchProtocolChart();
-}
+        async function fetchProtocolChart() {
+            const data = await fetchWithErrorHandling('/api/alltraffic');
+            if (!data) return;
 
-// أول تشغيل
-refreshAll();
-// تحديث كل 5 ثواني
-setInterval(refreshAll,5000);
-</script>
+            const protocols = {};
+            data.forEach(d => protocols[d.protocol] = (protocols[d.protocol] || 0) + 1);
+            const labels = Object.keys(protocols);
+            const values = Object.values(protocols);
+            const ctx = document.getElementById('protocolChart').getContext('2d');
+
+            if (chartInstances.protocol) chartInstances.protocol.destroy();
+            chartInstances.protocol = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Protocol Count',
+                        data: values,
+                        backgroundColor: ['#3b82f6', '#10b981', '#facc15', '#a78bfa', '#f87171']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { labels: { color: '#fff' } }
+                    }
+                }
+            });
+        }
+
+        async function refreshDashboard() {
+            await Promise.all([
+                fetchMetrics(),
+                fetchTopSources(),
+                fetchTopDest(),
+                fetchTrafficChart(),
+                fetchProtocolChart()
+            ]);
+        }
+
+        // ==================== PACKETS VIEW FUNCTIONS ====================
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleTimeString('en-US', { hour12: false });
+        }
+
+        async function fetchPackets() {
+            const data = await fetchWithErrorHandling('/api/raw_packets/last/100');
+            if (!data) return;
+
+            const tbody = document.getElementById('packetsTableBody');
+            tbody.innerHTML = '';
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-4 text-center text-gray-400">No packets available</td></tr>';
+                return;
+            }
+
+            data.forEach(packet => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-700';
+                row.innerHTML = `
+            <td class="px-4 py-3 text-sm">${formatTimestamp(packet.timestamp || 0)}</td>
+            <td class="px-4 py-3 text-sm">${packet.src_ip || 'N/A'}</td>
+            <td class="px-4 py-3 text-sm">${packet.dst_ip || 'N/A'}</td>
+            <td class="px-4 py-3 text-sm">
+                <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-900 text-blue-200">
+                    ${packet.protocol || 'N/A'}
+                </span>
+            </td>
+            <td class="px-4 py-3 text-sm">${packet.length || 0} bytes</td>
+            <td class="px-4 py-3 text-sm">${packet.tcp_flags || '-'}</td>
+        `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // ==================== ALERTS VIEW FUNCTIONS ====================
+        function getAlertColor(label) {
+            const labelLower = (label || '').toLowerCase();
+            if (labelLower.includes('ddos')) return 'bg-red-900 border-red-500';
+            if (labelLower.includes('port') || labelLower.includes('scan')) return 'bg-orange-900 border-orange-500';
+            return 'bg-yellow-900 border-yellow-500';
+        }
+
+        async function fetchAlerts() {
+            const data = await fetchWithErrorHandling('/api/alltraffic');
+            if (!data) return;
+
+            const alerts = data.filter(item =>
+                item.predicted_label &&
+                item.predicted_label.toLowerCase() !== 'normal'
+            );
+
+            const container = document.getElementById('alertsContainer');
+            container.innerHTML = '';
+
+            if (alerts.length === 0) {
+                container.innerHTML = `
+            <div class="bg-gray-800 rounded-xl p-6 text-center">
+                <i data-feather="check-circle" class="w-12 h-12 mx-auto mb-2 text-green-500"></i>
+                <p class="text-lg font-semibold text-green-400">All Clear!</p>
+                <p class="text-gray-400 mt-2">No security threats detected</p>
+            </div>
+        `;
+                feather.replace();
+                return;
+            }
+
+            alerts.forEach(alert => {
+                const colorClass = getAlertColor(alert.predicted_label);
+                const card = document.createElement('div');
+                card.className = `${colorClass} border-2 rounded-xl p-6 shadow-lg`;
+                card.innerHTML = `
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <h3 class="text-xl font-bold mb-2">${alert.predicted_label || 'Unknown Threat'}</h3>
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <span class="text-gray-300">Source MAC:</span>
+                            <span class="font-mono ml-2">${alert.source_mac || 'N/A'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-300">Dest IP:</span>
+                            <span class="font-mono ml-2">${alert.dest_ip || 'N/A'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-300">Protocol:</span>
+                            <span class="font-mono ml-2">${alert.protocol || 'N/A'}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-300">Packets:</span>
+                            <span class="font-mono ml-2">${alert.packet_count || 0}</span>
+                        </div>
+                    </div>
+                </div>
+                <i data-feather="alert-triangle" class="w-8 h-8 ml-4"></i>
+            </div>
+        `;
+                container.appendChild(card);
+            });
+
+            feather.replace();
+        }
+
+        // ==================== ANALYTICS VIEW FUNCTIONS ====================
+        async function fetchBytesChart() {
+            const data = await fetchWithErrorHandling('/api/alltraffic');
+            if (!data) return;
+
+            const sortedData = data.sort((a, b) => (a.id_num || 0) - (b.id_num || 0)).slice(0, 30);
+            const labels = sortedData.map((d, idx) => `T${idx + 1}`);
+            const bytesPerSec = sortedData.map(d => d.byte_per_sec || 0);
+            const ctx = document.getElementById('bytesChart').getContext('2d');
+
+            if (chartInstances.bytes) chartInstances.bytes.destroy();
+            chartInstances.bytes = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Bytes/sec',
+                        data: bytesPerSec,
+                        borderColor: 'rgb(147, 51, 234)',
+                        backgroundColor: 'rgba(147, 51, 234, 0.2)',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { labels: { color: '#fff' } }
+                    },
+                    scales: {
+                        y: {
+                            ticks: { color: '#fff' },
+                            grid: { color: '#374151' },
+                            title: { display: true, text: 'Bytes per Second', color: '#fff' }
+                        },
+                        x: { ticks: { color: '#fff' }, grid: { color: '#374151' } }
+                    }
+                }
+            });
+        }
+
+        async function fetchTopTalkers() {
+            const data = await fetchWithErrorHandling('/api/alltraffic');
+            if (!data) return;
+
+            // Group by source MAC and sum packet counts
+            const talkers = {};
+            data.forEach(item => {
+                const mac = item.source_mac || 'Unknown';
+                if (!talkers[mac]) {
+                    talkers[mac] = { mac, packets: 0, bytes: 0 };
+                }
+                talkers[mac].packets += (item.packet_count || 0);
+                talkers[mac].bytes += (item.byte_count || 0);
+            });
+
+            const sortedTalkers = Object.values(talkers)
+                .sort((a, b) => b.packets - a.packets)
+                .slice(0, 10);
+
+            const container = document.getElementById('topTalkersContainer');
+            container.innerHTML = '';
+
+            if (sortedTalkers.length === 0) {
+                container.innerHTML = '<p class="text-gray-400">No data available</p>';
+                return;
+            }
+
+            const maxPackets = Math.max(...sortedTalkers.map(t => t.packets || 1));
+
+            sortedTalkers.forEach((talker, idx) => {
+                const percentage = ((talker.packets || 0) / maxPackets) * 100;
+                const div = document.createElement('div');
+                div.className = 'bg-gray-700 rounded-lg p-4';
+                div.innerHTML = `
+            <div class="flex justify-between items-center mb-2">
+                <span class="font-mono text-sm">${talker.mac}</span>
+                <span class="text-xs bg-purple-900 text-purple-200 px-2 py-1 rounded">#${idx + 1}</span>
+            </div>
+            <div class="flex justify-between text-sm text-gray-300 mb-2">
+                <span>${talker.packets.toLocaleString()} packets</span>
+                <span>${(talker.bytes / 1024).toFixed(2)} KB</span>
+            </div>
+            <div class="h-2 bg-gray-600 rounded-full overflow-hidden">
+                <div class="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full" style="width: ${percentage}%"></div>
+            </div>
+        `;
+                container.appendChild(div);
+            });
+        }
+
+        async function refreshAnalytics() {
+            await Promise.all([
+                fetchBytesChart(),
+                fetchTopTalkers()
+            ]);
+        }
+
+        // ==================== MAIN REFRESH LOGIC ====================
+        async function refreshCurrentView() {
+            switch (currentView) {
+                case 'dashboard':
+                    await refreshDashboard();
+                    break;
+                case 'packets':
+                    await fetchPackets();
+                    break;
+                case 'alerts':
+                    await fetchAlerts();
+                    break;
+                case 'analytics':
+                    await refreshAnalytics();
+                    break;
+            }
+        }
+
+        // ==================== INITIALIZATION ====================
+        // Initial load
+        refreshCurrentView();
+
+        // Set up auto-refresh every 5 seconds
+        setInterval(refreshCurrentView, 5000);
+    </script>
 </body>
+
 </html>

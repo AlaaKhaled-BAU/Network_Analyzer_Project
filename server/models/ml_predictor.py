@@ -15,8 +15,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine, select, and_
 from sqlalchemy.orm import Session
 
-# Add parent directory to path to import from app
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add parent directories to path to import from app (we're in models folder now)
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
 from app.main import (
     predictions_5s_table,
     predictions_30s_table, 
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 # Load ML Model (Random Forest)
 try:
-    model_path = os.path.join(os.path.dirname(__file__), 'models', 'AI_model.pkl')
+    model_path = os.path.join(os.path.dirname(__file__), 'AI_model.pkl')
     model = joblib.load(model_path)
     logger.info(f"Random Forest model loaded from {model_path}")
     logger.info(f"Model type: {type(model)}")

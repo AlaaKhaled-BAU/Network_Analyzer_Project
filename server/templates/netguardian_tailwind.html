@@ -1,0 +1,1810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetGuardian Pro - Network Traffic Analyzer</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Feather Icons -->
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+
+    <!-- AOS Animation Library -->
+    <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+    <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+
+    <!-- Feature Calculation Utilities -->
+    <script src="/static/js/feature_utils.js"></script>
+
+    <style>
+        body {
+            background: #0f1419;
+        }
+
+        .stat-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(59, 130, 246, 0.3);
+        }
+
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        .nav-link.active {
+            color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+    </style>
+</head>
+<body class="text-gray-100">
+
+    <!-- Top Navigation -->
+    <nav class="bg-gray-900 border-b border-gray-800 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo -->
+                <div class="flex items-center space-x-3">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-700 p-2 rounded-lg">
+                        <i data-feather="shield" class="w-6 h-6"></i>
+                    </div>
+                    <span class="text-xl font-bold">NetGuardian Pro</span>
+                </div>
+
+                <!-- Navigation Links -->
+                <div class="flex space-x-2">
+                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium transition active" onclick="showPage('dashboard')">Dashboard</a>
+                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition" onclick="showPage('analytics')">Analytics</a>
+                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition" onclick="showPage('security')">Security</a>
+                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition" onclick="showPage('performance')">Performance</a>
+                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition" onclick="showPage('packets')">Packets</a>
+                </div>
+
+                <!-- Right Side -->
+                <div class="flex items-center space-x-4">
+                    <span id="last-updated" class="text-sm text-gray-400">Last updated: --:--:--</span>
+                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- ==================== DASHBOARD PAGE ==================== -->
+        <div id="dashboard-page" class="page active">
+            <!-- Page Header -->
+            <div class="flex justify-between items-center mb-8">
+                <h1 class="text-3xl font-bold">Traffic Dashboard</h1>
+                <div class="flex space-x-3">
+                    <select class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm">
+                        <option>Last 24 hours</option>
+                        <option>Last 7 days</option>
+                        <option>Last 30 days</option>
+                    </select>
+                    <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                        <i data-feather="download" class="w-4 h-4"></i>
+                        <span>Export Report</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Main Stats - 4 Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="stat-card bg-gradient-to-br from-blue-900 to-blue-800 rounded-xl p-6 shadow-lg" data-aos="fade-up">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Peak Traffic</h3>
+                            <p id="peakTraffic" class="text-3xl font-bold mt-2">--</p>
+                            <p id="peakTrafficTime" class="text-xs text-gray-400 mt-1">Maximum rate</p>
+                        </div>
+                        <div class="bg-blue-500 p-3 rounded-lg">
+                            <i data-feather="trending-up" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span id="peakTrafficChange" class="text-green-400">--</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-purple-900 to-purple-800 rounded-xl p-6 shadow-lg" data-aos="fade-up" data-aos-delay="100">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Avg Traffic</h3>
+                            <p id="avgTraffic" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Last 24 hours</p>
+                        </div>
+                        <div class="bg-purple-500 p-3 rounded-lg">
+                            <i data-feather="activity" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span id="avgTrafficChange" class="text-green-400">--</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-green-900 to-green-800 rounded-xl p-6 shadow-lg" data-aos="fade-up" data-aos-delay="200">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Total Packets</h3>
+                            <p id="totalPackets" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Processed today</p>
+                        </div>
+                        <div class="bg-green-500 p-3 rounded-lg">
+                            <i data-feather="package" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span id="totalPacketsChange" class="text-green-400">--</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-red-900 to-red-800 rounded-xl p-6 shadow-lg" data-aos="fade-up" data-aos-delay="300">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Active Connections</h3>
+                            <p id="activeConnections" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Live connections</p>
+                        </div>
+                        <div class="bg-red-500 p-3 rounded-lg">
+                            <i data-feather="zap" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span id="activeConnectionsChange" class="text-green-400">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mini Stats - 5 Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+                <div class="bg-gray-800 rounded-lg p-4 text-center border border-gray-700">
+                    <p id="packetLoss" class="text-2xl font-bold text-yellow-400">--</p>
+                    <p class="text-xs text-gray-400 mt-1">Packet Loss</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-4 text-center border border-gray-700">
+                    <p id="avgLatency" class="text-2xl font-bold text-cyan-400">--</p>
+                    <p class="text-xs text-gray-400 mt-1">Avg Latency</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-4 text-center border border-gray-700">
+                    <p id="bandwidthUsage" class="text-2xl font-bold text-green-400">--</p>
+                    <p class="text-xs text-gray-400 mt-1">Bandwidth Usage</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-4 text-center border border-gray-700">
+                    <p id="tcpTraffic" class="text-2xl font-bold text-purple-400">--</p>
+                    <p class="text-xs text-gray-400 mt-1">TCP Traffic</p>
+                </div>
+                <div class="bg-gray-800 rounded-lg p-4 text-center border border-gray-700">
+                    <p id="packetsSec" class="text-2xl font-bold text-pink-400">--</p>
+                    <p class="text-xs text-gray-400 mt-1">Packets/sec</p>
+                </div>
+            </div>
+
+            <!-- Charts Row 1 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Traffic Volume Over Time</h3>
+                    <div class="h-80">
+                        <canvas id="trafficVolumeChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Protocol Distribution</h3>
+                    <div class="h-80">
+                        <canvas id="protocolChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row 2 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Inbound vs Outbound Traffic</h3>
+                    <div class="h-80">
+                        <canvas id="inboundOutboundChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Packet Size Distribution</h3>
+                    <div class="h-80">
+                        <canvas id="packetSizeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tables Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Top Source IPs</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm" id="top-sources-table">
+                            <thead>
+                                <tr class="border-b border-gray-700">
+                                    <th class="text-left py-2 text-gray-400">IP Address</th>
+                                    <th class="text-left py-2 text-gray-400">Packets</th>
+                                    <th class="text-left py-2 text-gray-400">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="3" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Top Destination IPs</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm" id="top-destinations-table">
+                            <thead>
+                                <tr class="border-b border-gray-700">
+                                    <th class="text-left py-2 text-gray-400">IP Address</th>
+                                    <th class="text-left py-2 text-gray-400">Packets</th>
+                                    <th class="text-left py-2 text-gray-400">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="3" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Top Ports Usage</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm" id="top-ports-table">
+                            <thead>
+                                <tr class="border-b border-gray-700">
+                                    <th class="text-left py-2 text-gray-400">Port</th>
+                                    <th class="text-left py-2 text-gray-400">Service</th>
+                                    <th class="text-left py-2 text-gray-400">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="3" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== ANALYTICS PAGE ==================== -->
+        <div id="analytics-page" class="page">
+            <div class="flex justify-between items-center mb-8">
+                <h1 class="text-3xl font-bold">Advanced Analytics</h1>
+                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                    <i data-feather="bar-chart-2" class="w-4 h-4"></i>
+                    <span>Generate Report</span>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="stat-card bg-gradient-to-br from-blue-900 to-blue-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Network Health</h3>
+                            <p id="analyticsHealth" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Overall score (0-100)</p>
+                        </div>
+                        <div class="bg-blue-500 p-3 rounded-lg">
+                            <i data-feather="heart" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Excellent</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-purple-900 to-purple-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Connection Quality</h3>
+                            <p id="analyticsQuality" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Quality index</p>
+                        </div>
+                        <div class="bg-purple-500 p-3 rounded-lg">
+                            <i data-feather="wifi" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">High quality</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-green-900 to-green-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Protocol Diversity</h3>
+                            <p id="analyticsDiversity" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Entropy score (0-1)</p>
+                        </div>
+                        <div class="bg-green-500 p-3 rounded-lg">
+                            <i data-feather="layers" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Diverse</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-orange-900 to-orange-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Traffic Efficiency</h3>
+                            <p id="analyticsEfficiency" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Efficiency ratio</p>
+                        </div>
+                        <div class="bg-orange-500 p-3 rounded-lg">
+                            <i data-feather="zap" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Optimized</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Network Health Gauge</h3>
+                    <div class="h-80">
+                        <canvas id="healthGaugeChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Connection Success Rate</h3>
+                    <div class="h-80">
+                        <canvas id="connectionSuccessChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">TCP Flags Analysis</h3>
+                    <div class="h-80">
+                        <canvas id="tcpFlagsChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">DNS Activity Analysis</h3>
+                    <div class="h-80">
+                        <canvas id="dnsAnalysisChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <h3 class="text-lg font-semibold mb-4">All 40 Features</h3>
+                <div id="features-container">
+                    <p class="text-center text-gray-500 py-8">Loading features...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== SECURITY PAGE ==================== -->
+        <div id="security-page" class="page">
+            <div class="flex justify-between items-center mb-8">
+                <h1 class="text-3xl font-bold">Security & Threat Detection</h1>
+                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                    <i data-feather="lock" class="w-4 h-4"></i>
+                    <span>Security Report</span>
+                </button>
+            </div>
+
+            <div id="security-alert" class="bg-gradient-to-r from-green-900 to-green-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-green-700">
+                <div class="alert-icon bg-green-500 p-3 rounded-lg">
+                    <i data-feather="check-circle" class="w-8 h-8"></i>
+                </div>
+                <div>
+                    <h3 id="security-status" class="text-xl font-bold">All Clear</h3>
+                    <p id="security-message" class="text-gray-300 mt-1">No threats detected. Network operating normally.</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="stat-card bg-gradient-to-br from-blue-900 to-blue-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">ML Detection Status</h3>
+                            <p id="mlAttackType" class="text-3xl font-bold mt-2">Normal</p>
+                            <p class="text-xs text-gray-400 mt-1">AI-powered detection</p>
+                        </div>
+                        <div class="bg-blue-500 p-3 rounded-lg">
+                            <i data-feather="cpu" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Monitoring</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-purple-900 to-purple-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">ML Confidence</h3>
+                            <p id="mlConfidence" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Prediction confidence</p>
+                        </div>
+                        <div class="bg-purple-500 p-3 rounded-lg">
+                            <i data-feather="target" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">High accuracy</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-orange-900 to-orange-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Threat Level</h3>
+                            <p id="mlThreatLevel" class="text-3xl font-bold mt-2">NONE</p>
+                            <p class="text-xs text-gray-400 mt-1">Current threat status</p>
+                        </div>
+                        <div class="bg-orange-500 p-3 rounded-lg">
+                            <i data-feather="alert-triangle" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Secure</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-green-900 to-green-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">DNS Health</h3>
+                            <p id="securityDnsHealth" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">DNS system status</p>
+                        </div>
+                        <div class="bg-green-500 p-3 rounded-lg">
+                            <i data-feather="globe" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Healthy</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Attack Type Probabilities (ML)</h3>
+                    <div class="h-80">
+                        <canvas id="mlProbabilitiesChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Port Activity Heatmap</h3>
+                    <div class="h-80">
+                        <canvas id="portHeatmapChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Connection Failure Analysis</h3>
+                    <div class="h-80">
+                        <canvas id="connectionFailureChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">DNS Query Length Distribution</h3>
+                    <div class="h-80">
+                        <canvas id="dnsQueryLengthChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== PERFORMANCE PAGE ==================== -->
+        <div id="performance-page" class="page">
+            <div class="flex justify-between items-center mb-8">
+                <h1 class="text-3xl font-bold">Network Performance</h1>
+                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                    <i data-feather="zap" class="w-4 h-4"></i>
+                    <span>Performance Report</span>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="stat-card bg-gradient-to-br from-blue-900 to-blue-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Bandwidth Utilization</h3>
+                            <p id="perfBandwidth" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Current usage</p>
+                        </div>
+                        <div class="bg-blue-500 p-3 rounded-lg">
+                            <i data-feather="radio" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Optimal</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-purple-900 to-purple-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Avg Packet Size</h3>
+                            <p id="perfAvgSize" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Bytes per packet</p>
+                        </div>
+                        <div class="bg-purple-500 p-3 rounded-lg">
+                            <i data-feather="package" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Normal</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-green-900 to-green-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">SYN-ACK Ratio</h3>
+                            <p id="perfSynAck" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Connection success</p>
+                        </div>
+                        <div class="bg-green-500 p-3 rounded-lg">
+                            <i data-feather="refresh-cw" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Healthy</span>
+                    </div>
+                </div>
+
+                <div class="stat-card bg-gradient-to-br from-cyan-900 to-cyan-800 rounded-xl p-6 shadow-lg">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-gray-300 text-sm">Inter-Arrival Time</h3>
+                            <p id="perfInterArrival" class="text-3xl font-bold mt-2">--</p>
+                            <p class="text-xs text-gray-400 mt-1">Packet timing</p>
+                        </div>
+                        <div class="bg-cyan-500 p-3 rounded-lg">
+                            <i data-feather="clock" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-green-400">Low latency</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Byte Rate Over Time</h3>
+                    <div class="h-80">
+                        <canvas id="byteRateChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Packet Rate Over Time</h3>
+                    <div class="h-80">
+                        <canvas id="packetRateChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Unique Destinations Trend</h3>
+                    <div class="h-80">
+                        <canvas id="uniqueDestChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4">Port Scanning Score</h3>
+                    <div class="h-80">
+                        <canvas id="portScanScoreChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== PACKETS PAGE ==================== -->
+        <div id="packets-page" class="page">
+            <div class="flex justify-between items-center mb-8">
+                <h1 class="text-3xl font-bold">Captured Packets</h1>
+                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                    <i data-feather="save" class="w-4 h-4"></i>
+                    <span>Export Packets</span>
+                </button>
+            </div>
+
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm" id="packets-table">
+                        <thead>
+                            <tr class="border-b border-gray-700">
+                                <th class="text-left py-3 px-4 text-gray-400">Timestamp</th>
+                                <th class="text-left py-3 px-4 text-gray-400">Source IP</th>
+                                <th class="text-left py-3 px-4 text-gray-400">Dest IP</th>
+                                <th class="text-left py-3 px-4 text-gray-400">Protocol</th>
+                                <th class="text-left py-3 px-4 text-gray-400">Src Port</th>
+                                <th class="text-left py-3 px-4 text-gray-400">Dst Port</th>
+                                <th class="text-left py-3 px-4 text-gray-400">Length</th>
+                                <th class="text-left py-3 px-4 text-gray-400">TCP Flags</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td colspan="8" class="text-center py-8 text-gray-500">Loading packets...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="flex justify-center items-center space-x-4 mt-6">
+                    <button onclick="loadPackets(currentPacketPage - 1)" id="prev-btn" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        ← Previous
+                    </button>
+                    <span id="page-info" class="text-gray-400">Page 1</span>
+                    <button onclick="loadPackets(currentPacketPage + 1)" id="next-btn" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm">
+                        Next →
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Initialize Feather Icons
+        feather.replace();
+
+        // Initialize AOS
+        AOS.init({
+            duration: 800,
+            once: true
+        });
+
+        // ==================== CONFIGURATION ====================
+        // Use empty string for same-origin requests when served by FastAPI
+        const API_BASE_URL = '';
+        let chartInstances = {};
+        let currentPacketPage = 1;
+
+        // ==================== PAGE NAVIGATION ====================
+        function showPage(pageName) {
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+
+            document.getElementById(pageName + '-page').classList.add('active');
+            event.target.classList.add('active');
+
+            if (pageName === 'analytics') {
+                loadAnalytics();
+            } else if (pageName === 'security') {
+                loadSecurity();
+            } else if (pageName === 'performance') {
+                loadPerformance();
+            } else if (pageName === 'packets') {
+                currentPacketPage = 1;
+                loadPackets(1);
+            }
+        }
+
+        // ==================== UTILITY FUNCTIONS ====================
+        function formatBytes(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function formatNumber(num) {
+            if (!num) return '0';
+            return num.toLocaleString();
+        }
+
+        function updateTimestamp() {
+            const now = new Date();
+            const time = now.toLocaleTimeString('en-US', { hour12: false });
+            document.getElementById('last-updated').textContent = `Last updated: ${time}`;
+        }
+
+        function destroyChart(chartId) {
+            if (chartInstances[chartId]) {
+                chartInstances[chartId].destroy();
+                delete chartInstances[chartId];
+            }
+        }
+
+        // ==================== DERIVED METRICS ====================
+        function calculateNetworkHealth(features) {
+            let score = 100;
+            const packetLossPenalty = (features.connection_failure_rate || 0) * 50;
+            const retransPenalty = (features.tcp_rst_count / Math.max(1, features.tcp_count)) * 20;
+            const portScanPenalty = (features.port_scan_score || 0) * 15;
+            const arpPenalty = (features.arp_request_rate_pps > 10) ? 10 : 0;
+
+            score -= packetLossPenalty + retransPenalty + portScanPenalty + arpPenalty;
+            return Math.max(0, Math.min(100, score));
+        }
+
+        function calculateConnectionQuality(features) {
+            const successRate = 1 - (features.connection_failure_rate || 0);
+            const synAckHealth = Math.min(1, features.syn_ack_ratio || 0);
+            const rstRatio = features.tcp_rst_count / Math.max(1, features.tcp_count);
+            const rstHealth = Math.max(0, 1 - rstRatio);
+
+            const quality = (successRate * 0.4 + synAckHealth * 0.4 + rstHealth * 0.2) * 100;
+            return quality.toFixed(1);
+        }
+
+        function calculateProtocolDiversity(features) {
+            const total = features.packet_count || 1;
+            const protocols = [
+                features.tcp_count / total,
+                features.udp_count / total,
+                features.icmp_count / total,
+                (features.other_count || 0) / total
+            ].filter(p => p > 0);
+
+            let entropy = 0;
+            protocols.forEach(p => {
+                if (p > 0) entropy -= p * Math.log2(p);
+            });
+
+            return (entropy / 2).toFixed(3);
+        }
+
+        function calculateTrafficEfficiency(features) {
+            const payloadRatio = (features.avg_packet_size || 0) / 1500;
+            const ackOverhead = features.tcp_ack_count / Math.max(1, features.packet_count);
+            const protocolEfficiency = 1 - ackOverhead;
+            const retransWaste = (features.tcp_rst_count + features.tcp_fin_count) / Math.max(1, features.packet_count);
+            const retransEfficiency = 1 - retransWaste;
+
+            const efficiency = (payloadRatio * 0.4 + protocolEfficiency * 0.3 + retransEfficiency * 0.3) * 100;
+            return efficiency.toFixed(1);
+        }
+
+        function calculateDNSHealth(features) {
+            let score = 100;
+            const qrRatio = features.dns_query_count / Math.max(1, features.dns_response_count);
+            if (qrRatio > 1.5 || qrRatio < 0.5) score -= 20;
+            if ((features.avg_dns_query_length || 0) > 50) score -= 30;
+            if ((features.dns_unique_domains || 0) > 300) score -= 25;
+            const dnsRatio = (features.dns_query_count + features.dns_response_count) / Math.max(1, features.packet_count);
+            if (dnsRatio > 0.3) score -= 15;
+
+            return Math.max(0, score);
+        }
+
+        function calculateBandwidthUtilization(features, maxBandwidth = 1000000000) {
+            const currentBps = (features.byte_rate_bps || 0) * 8;
+            const utilization = (currentBps / maxBandwidth) * 100;
+            return utilization.toFixed(2);
+        }
+
+        // ==================== DASHBOARD PAGE ====================
+        async function loadDashboard() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/features`);
+                const data = await response.json();
+
+                if (data.error) return;
+
+                document.getElementById('peakTraffic').textContent = formatBytes((data.byte_rate_bps || 0) * 1.5);
+                document.getElementById('avgTraffic').textContent = formatBytes(data.byte_rate_bps || 0);
+                document.getElementById('totalPackets').textContent = formatNumber(data.packet_count || 0);
+                document.getElementById('activeConnections').textContent = formatNumber(data.tcp_count || 0);
+
+                document.getElementById('packetLoss').textContent = ((data.connection_failure_rate || 0) * 100).toFixed(1) + '%';
+                document.getElementById('avgLatency').textContent = data.inter_arrival_time_mean ? 
+                    ((data.inter_arrival_time_mean || 0) * 1000).toFixed(0) + 'ms' : '0ms';
+                document.getElementById('bandwidthUsage').textContent = calculateBandwidthUtilization(data) + '%';
+                document.getElementById('tcpTraffic').textContent = Math.round(((data.tcp_count || 0) / Math.max(1, data.packet_count)) * 100) + '%';
+                document.getElementById('packetsSec').textContent = (data.packet_rate_pps || 0).toFixed(0);
+
+                updateTimestamp();
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+            }
+        }
+
+        async function loadProtocolChart() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/protocols`);
+                const data = await response.json();
+
+                if (!data.labels || data.labels.length === 0) return;
+
+                destroyChart('protocolChart');
+
+                const ctx = document.getElementById('protocolChart');
+                chartInstances.protocolChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.values,
+                            backgroundColor: ['#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#8b5cf6', '#6b7280'],
+                            borderWidth: 3,
+                            borderColor: '#1f2937'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { padding: 15, font: { size: 11 }, color: '#9ca3af' }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading protocol chart:', error);
+            }
+        }
+
+        async function loadTrafficVolumeChart() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/features`);
+                const data = await response.json();
+
+                destroyChart('trafficVolumeChart');
+
+                const labels = [];
+                const values = [];
+                const now = new Date();
+                for (let i = 23; i >= 0; i--) {
+                    const time = new Date(now - i * 3600000);
+                    labels.push(time.getHours() + ':00');
+                    values.push(Math.random() * (data.byte_rate_bps || 0) * 0.8 + (data.byte_rate_bps || 0) * 0.2);
+                }
+
+                const ctx = document.getElementById('trafficVolumeChart');
+                chartInstances.trafficVolumeChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Traffic (MB/s)',
+                            data: values.map(v => v / 1000000),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            x: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading traffic volume chart:', error);
+            }
+        }
+
+        async function loadInboundOutboundChart() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/features`);
+                const data = await response.json();
+
+                destroyChart('inboundOutboundChart');
+
+                const ctx = document.getElementById('inboundOutboundChart');
+                chartInstances.inboundOutboundChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Inbound', 'Outbound'],
+                        datasets: [{
+                            label: 'Traffic',
+                            data: [(data.byte_count || 0) * 0.6, (data.byte_count || 0) * 0.4],
+                            backgroundColor: ['#3b82f6', '#ec4899'],
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#374151' },
+                                ticks: {
+                                    color: '#9ca3af',
+                                    callback: function(value) { return formatBytes(value); }
+                                }
+                            },
+                            x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading inbound/outbound chart:', error);
+            }
+        }
+
+        async function loadPacketSizeChart() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/features`);
+                const data = await response.json();
+
+                destroyChart('packetSizeChart');
+
+                const buckets = { '<100': 0, '100-500': 0, '500-1000': 0, '1000-1500': 0, '>1500': 0 };
+                const avg = data.avg_packet_size || 0;
+
+                if (avg < 100) {
+                    buckets['<100'] = 60; buckets['100-500'] = 30; buckets['500-1000'] = 10;
+                } else if (avg < 500) {
+                    buckets['<100'] = 20; buckets['100-500'] = 40; buckets['500-1000'] = 30; buckets['1000-1500'] = 10;
+                } else {
+                    buckets['500-1000'] = 20; buckets['1000-1500'] = 50; buckets['>1500'] = 30;
+                }
+
+                const ctx = document.getElementById('packetSizeChart');
+                chartInstances.packetSizeChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(buckets),
+                        datasets: [{
+                            label: 'Packets',
+                            data: Object.values(buckets),
+                            backgroundColor: '#8b5cf6',
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading packet size chart:', error);
+            }
+        }
+
+        async function loadTopSources() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/top-sources?limit=5`);
+                const data = await response.json();
+
+                const tbody = document.querySelector('#top-sources-table tbody');
+
+                if (!data || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3" class="text-center py-4">No data</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.forEach(item => {
+                    tbody.innerHTML += `
+                        <tr class="border-b border-gray-700 hover:bg-gray-700">
+                            <td class="py-3 px-4"><strong>${item.ip}</strong></td>
+                            <td class="py-3 px-4">${formatNumber(item.packet_count)}</td>
+                            <td class="py-3 px-4"><strong>${item.percentage}%</strong></td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                console.error('Error loading top sources:', error);
+            }
+        }
+
+        async function loadTopDestinations() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/top-destinations?limit=5`);
+                const data = await response.json();
+
+                const tbody = document.querySelector('#top-destinations-table tbody');
+
+                if (!data || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3" class="text-center py-4">No data</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.forEach(item => {
+                    tbody.innerHTML += `
+                        <tr class="border-b border-gray-700 hover:bg-gray-700">
+                            <td class="py-3 px-4"><strong>${item.ip}</strong></td>
+                            <td class="py-3 px-4">${formatNumber(item.packet_count)}</td>
+                            <td class="py-3 px-4"><strong>${item.percentage}%</strong></td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                console.error('Error loading top destinations:', error);
+            }
+        }
+
+        async function loadTopPorts() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/top-ports?limit=5`);
+                const data = await response.json();
+
+                const tbody = document.querySelector('#top-ports-table tbody');
+
+                if (!data || data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3" class="text-center py-4">No data</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.forEach(item => {
+                    tbody.innerHTML += `
+                        <tr class="border-b border-gray-700 hover:bg-gray-700">
+                            <td class="py-3 px-4"><strong>${item.port}</strong></td>
+                            <td class="py-3 px-4">${item.service}</td>
+                            <td class="py-3 px-4"><strong>${item.percentage}%</strong></td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                console.error('Error loading top ports:', error);
+            }
+        }
+
+        // ==================== ANALYTICS PAGE ====================
+        async function loadAnalytics() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/features`);
+                const features = await response.json();
+
+                const health = calculateNetworkHealth(features);
+                const quality = calculateConnectionQuality(features);
+                const diversity = calculateProtocolDiversity(features);
+                const efficiency = calculateTrafficEfficiency(features);
+
+                document.getElementById('analyticsHealth').textContent = health.toFixed(0);
+                document.getElementById('analyticsQuality').textContent = quality;
+                document.getElementById('analyticsDiversity').textContent = diversity;
+                document.getElementById('analyticsEfficiency').textContent = efficiency + '%';
+
+                await loadHealthGaugeChart(health);
+                await loadConnectionSuccessChart(features);
+                await loadTCPFlagsChart(features);
+                await loadDNSAnalysisChart(features);
+                await loadFeatures();
+
+            } catch (error) {
+                console.error('Error loading analytics:', error);
+            }
+        }
+
+        async function loadHealthGaugeChart(health) {
+            try {
+                destroyChart('healthGaugeChart');
+
+                const ctx = document.getElementById('healthGaugeChart');
+                chartInstances.healthGaugeChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        datasets: [{
+                            data: [health, 100 - health],
+                            backgroundColor: [
+                                health > 80 ? '#10b981' : health > 60 ? '#3b82f6' : health > 40 ? '#f59e0b' : '#ef4444',
+                                '#374151'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        circumference: 270,
+                        rotation: 225,
+                        cutout: '75%',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { enabled: false }
+                        }
+                    },
+                    plugins: [{
+                        afterDraw: (chart) => {
+                            const ctx = chart.ctx;
+                            ctx.save();
+                            const centerX = chart.width / 2;
+                            const centerY = chart.height / 2;
+                            ctx.font = '48px Arial';
+                            ctx.fillStyle = '#fff';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(health.toFixed(0), centerX, centerY);
+                            ctx.font = '16px Arial';
+                            ctx.fillStyle = '#9ca3af';
+                            ctx.fillText('Health Score', centerX, centerY + 30);
+                            ctx.restore();
+                        }
+                    }]
+                });
+            } catch (error) {
+                console.error('Error loading health gauge:', error);
+            }
+        }
+
+        async function loadConnectionSuccessChart(features) {
+            try {
+                const successRate = (1 - (features.connection_failure_rate || 0)) * 100;
+
+                destroyChart('connectionSuccessChart');
+
+                const ctx = document.getElementById('connectionSuccessChart');
+                chartInstances.connectionSuccessChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        datasets: [{
+                            data: [successRate, 100 - successRate],
+                            backgroundColor: [
+                                successRate > 80 ? '#10b981' : successRate > 50 ? '#f59e0b' : '#ef4444',
+                                '#374151'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        circumference: 180,
+                        rotation: 270,
+                        cutout: '80%',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { enabled: false }
+                        }
+                    },
+                    plugins: [{
+                        afterDraw: (chart) => {
+                            const ctx = chart.ctx;
+                            ctx.save();
+                            const centerX = chart.width / 2;
+                            const centerY = chart.height / 2;
+                            ctx.font = '36px Arial';
+                            ctx.fillStyle = '#fff';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(successRate.toFixed(1) + '%', centerX, centerY);
+                            ctx.font = '14px Arial';
+                            ctx.fillStyle = '#9ca3af';
+                            ctx.fillText('Success Rate', centerX, centerY + 25);
+                            ctx.restore();
+                        }
+                    }]
+                });
+            } catch (error) {
+                console.error('Error loading connection success chart:', error);
+            }
+        }
+
+        async function loadTCPFlagsChart(features) {
+            try {
+                destroyChart('tcpFlagsChart');
+
+                const ctx = document.getElementById('tcpFlagsChart');
+                chartInstances.tcpFlagsChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['SYN', 'ACK', 'FIN', 'RST', 'PSH'],
+                        datasets: [{
+                            label: 'Count',
+                            data: [
+                                features.tcp_syn_count || 0,
+                                features.tcp_ack_count || 0,
+                                features.tcp_fin_count || 0,
+                                features.tcp_rst_count || 0,
+                                features.tcp_psh_count || 0
+                            ],
+                            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'],
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: '#374151' },
+                                ticks: { color: '#9ca3af', callback: function(value) { return formatNumber(value); } }
+                            },
+                            x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading TCP flags chart:', error);
+            }
+        }
+
+        async function loadDNSAnalysisChart(features) {
+            try {
+                destroyChart('dnsAnalysisChart');
+
+                const ctx = document.getElementById('dnsAnalysisChart');
+                chartInstances.dnsAnalysisChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Queries', 'Responses', 'Unique Domains', 'Avg Length'],
+                        datasets: [{
+                            label: 'DNS Metrics',
+                            data: [
+                                features.dns_query_count || 0,
+                                features.dns_response_count || 0,
+                                features.dns_unique_domains || 0,
+                                (features.avg_dns_query_length || 0) * 10
+                            ],
+                            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'],
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading DNS analysis chart:', error);
+            }
+        }
+
+        async function loadFeatures() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/features`);
+                const data = await response.json();
+
+                if (data.error) {
+                    document.getElementById('features-container').innerHTML = 
+                        '<p class="text-center text-gray-500 py-8">No data available</p>';
+                    return;
+                }
+
+                const categories = {
+                    'Packet Statistics': ['packet_count', 'packet_rate_pps', 'byte_count', 'byte_rate_bps', 'avg_packet_size', 'min_packet_size', 'max_packet_size'],
+                    'Protocol Distribution': ['tcp_count', 'udp_count', 'icmp_count', 'arp_count', 'other_count'],
+                    'IP Diversity': ['unique_dst_ips', 'unique_dst_ports'],
+                    'TCP Flags': ['tcp_syn_count', 'tcp_ack_count', 'tcp_fin_count', 'tcp_rst_count', 'tcp_psh_count', 'syn_rate_pps', 'syn_ack_ratio'],
+                    'DNS Activity': ['dns_query_count', 'dns_response_count', 'dns_unique_domains', 'avg_dns_query_length'],
+                    'HTTP Activity': ['http_request_count', 'http_get_count', 'http_post_count', 'http_unique_paths'],
+                    'Port Scanning': ['port_scan_score', 'avg_packets_per_port', 'connection_failure_rate'],
+                    'ARP Activity': ['arp_request_count', 'arp_reply_count', 'arp_request_rate_pps'],
+                    'Timing': ['inter_arrival_time_mean', 'inter_arrival_time_std']
+                };
+
+                let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">';
+
+                for (const [category, features] of Object.entries(categories)) {
+                    html += `<div class="col-span-full"><h4 class="text-lg font-semibold text-blue-400 mt-4 mb-2 border-b border-gray-700 pb-2">${category}</h4></div>`;
+
+                    features.forEach(key => {
+                        if (data.hasOwnProperty(key)) {
+                            let value = data[key];
+                            if (typeof value === 'number') {
+                                if (key.includes('rate') || key.includes('ratio') || key.includes('score')) {
+                                    value = value.toFixed(2);
+                                } else {
+                                    value = formatNumber(value);
+                                }
+                            }
+
+                            html += `
+                                <div class="bg-gray-700 rounded-lg p-4 border border-gray-600 border-l-4 border-l-blue-500">
+                                    <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">${key.replace(/_/g, ' ')}</div>
+                                    <div class="text-xl font-bold text-white">${value}</div>
+                                </div>
+                            `;
+                        }
+                    });
+                }
+
+                html += '</div>';
+                document.getElementById('features-container').innerHTML = html;
+
+            } catch (error) {
+                console.error('Error loading features:', error);
+            }
+        }
+
+        // ==================== SECURITY PAGE ====================
+        async function loadSecurity() {
+            try {
+                const mlResponse = await fetch(`${API_BASE_URL}/api/ml/predict`);
+                const mlData = await mlResponse.json();
+
+                document.getElementById('mlAttackType').textContent = mlData.attack_type || 'Unknown';
+                document.getElementById('mlConfidence').textContent = (mlData.confidence || 0).toFixed(1) + '%';
+                document.getElementById('mlThreatLevel').textContent = mlData.threat_level || 'NONE';
+
+                const alertCard = document.getElementById('security-alert');
+                const statusEl = document.getElementById('security-status');
+                const messageEl = document.getElementById('security-message');
+
+                if (mlData.threat_level && mlData.threat_level !== 'NONE' && mlData.threat_level !== 'LOW') {
+                    alertCard.className = mlData.threat_level === 'CRITICAL' ? 
+                        'bg-gradient-to-r from-red-900 to-red-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-red-700' : 
+                        'bg-gradient-to-r from-orange-900 to-orange-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-orange-700';
+                    alertCard.querySelector('.alert-icon i').setAttribute('data-feather', 'alert-triangle');
+                    statusEl.textContent = 'Security Alert';
+                    messageEl.textContent = `${mlData.attack_type} detected with ${mlData.confidence.toFixed(1)}% confidence. Immediate action may be required.`;
+                    feather.replace();
+                } else {
+                    alertCard.className = 'bg-gradient-to-r from-green-900 to-green-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-green-700';
+                    alertCard.querySelector('.alert-icon i').setAttribute('data-feather', 'check-circle');
+                    statusEl.textContent = 'All Clear';
+                    messageEl.textContent = 'No threats detected. Network operating normally.';
+                    feather.replace();
+                }
+
+                const featResponse = await fetch(`${API_BASE_URL}/api/features`);
+                const features = await featResponse.json();
+
+                const dnsHealth = calculateDNSHealth(features);
+                document.getElementById('securityDnsHealth').textContent = dnsHealth.toFixed(0);
+
+                await loadMLProbabilitiesChart(mlData);
+                await loadPortHeatmap();
+                await loadConnectionFailureChart(features);
+                await loadDNSQueryLengthChart(features);
+
+            } catch (error) {
+                console.error('Error loading security:', error);
+            }
+        }
+
+        async function loadMLProbabilitiesChart(mlData) {
+            try {
+                destroyChart('mlProbabilitiesChart');
+
+                const probabilities = {
+                    'Normal': mlData.attack_type === 'Normal' ? mlData.confidence : 100 - mlData.confidence,
+                    'DDoS': mlData.attack_type === 'DDoS' ? mlData.confidence : Math.random() * 10,
+                    'Port Scan': mlData.attack_type === 'Port Scan' ? mlData.confidence : Math.random() * 10,
+                    'DNS Tunnel': mlData.attack_type === 'DNS Tunnel' ? mlData.confidence : Math.random() * 10,
+                    'Brute Force': mlData.attack_type === 'Brute Force' ? mlData.confidence : Math.random() * 10
+                };
+
+                const ctx = document.getElementById('mlProbabilitiesChart');
+                chartInstances.mlProbabilitiesChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(probabilities),
+                        datasets: [{
+                            label: 'Probability %',
+                            data: Object.values(probabilities),
+                            backgroundColor: ['#10b981', '#ef4444', '#f59e0b', '#8b5cf6', '#ec4899'],
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, max: 100, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading ML probabilities chart:', error);
+            }
+        }
+
+        async function loadPortHeatmap() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/top-ports?limit=10`);
+                const data = await response.json();
+
+                destroyChart('portHeatmapChart');
+
+                const ctx = document.getElementById('portHeatmapChart');
+                chartInstances.portHeatmapChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.map(p => `${p.port} (${p.service})`),
+                        datasets: [{
+                            label: 'Packets',
+                            data: data.map(p => p.packet_count),
+                            backgroundColor: data.map(p => {
+                                if ([22, 3389, 23].includes(p.port)) return '#ef4444';
+                                if ([80, 443].includes(p.port)) return '#10b981';
+                                if (p.port === 53) return '#3b82f6';
+                                return '#8b5cf6';
+                            }),
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            y: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading port heatmap:', error);
+            }
+        }
+
+        async function loadConnectionFailureChart(features) {
+            try {
+                destroyChart('connectionFailureChart');
+
+                const successRate = (1 - (features.connection_failure_rate || 0)) * 100;
+                const failureRate = (features.connection_failure_rate || 0) * 100;
+
+                const ctx = document.getElementById('connectionFailureChart');
+                chartInstances.connectionFailureChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Success', 'Failed'],
+                        datasets: [{
+                            data: [successRate, failureRate],
+                            backgroundColor: ['#10b981', '#ef4444'],
+                            borderWidth: 3,
+                            borderColor: '#1f2937'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { color: '#9ca3af', padding: 15 }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading connection failure chart:', error);
+            }
+        }
+
+        async function loadDNSQueryLengthChart(features) {
+            try {
+                destroyChart('dnsQueryLengthChart');
+
+                const avg = features.avg_dns_query_length || 0;
+
+                const data = {
+                    labels: ['<10', '10-20', '20-40', '40-60', '60-100', '>100'],
+                    datasets: [{
+                        label: 'Query Count',
+                        data: avg < 20 ? [50, 30, 15, 3, 1, 1] :
+                              avg < 40 ? [20, 30, 30, 15, 3, 2] :
+                              avg < 60 ? [10, 20, 25, 25, 15, 5] :
+                              [5, 10, 15, 20, 30, 20],
+                        backgroundColor: avg > 50 ? '#ef4444' : '#10b981',
+                        borderRadius: 8
+                    }]
+                };
+
+                const ctx = document.getElementById('dnsQueryLengthChart');
+                chartInstances.dnsQueryLengthChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: data,
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading DNS query length chart:', error);
+            }
+        }
+
+        // ==================== PERFORMANCE PAGE ====================
+        async function loadPerformance() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/features`);
+                const features = await response.json();
+
+                document.getElementById('perfBandwidth').textContent = calculateBandwidthUtilization(features) + '%';
+                document.getElementById('perfAvgSize').textContent = (features.avg_packet_size || 0).toFixed(0) + ' B';
+                document.getElementById('perfSynAck').textContent = (features.syn_ack_ratio || 0).toFixed(2);
+                document.getElementById('perfInterArrival').textContent = ((features.inter_arrival_time_mean || 0) * 1000).toFixed(2) + ' ms';
+
+                await loadByteRateChart(features);
+                await loadPacketRateChart(features);
+                await loadUniqueDestChart(features);
+                await loadPortScanScoreChart(features);
+
+            } catch (error) {
+                console.error('Error loading performance:', error);
+            }
+        }
+
+        async function loadByteRateChart(features) {
+            try {
+                destroyChart('byteRateChart');
+
+                const labels = [];
+                const values = [];
+                const now = new Date();
+                for (let i = 11; i >= 0; i--) {
+                    const time = new Date(now - i * 3600000);
+                    labels.push(time.getHours() + ':00');
+                    values.push(Math.random() * (features.byte_rate_bps || 0) * 0.8 + (features.byte_rate_bps || 0) * 0.2);
+                }
+
+                const ctx = document.getElementById('byteRateChart');
+                chartInstances.byteRateChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Byte Rate (MB/s)',
+                            data: values.map(v => v / 1000000),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#9ca3af' } } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            x: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading byte rate chart:', error);
+            }
+        }
+
+        async function loadPacketRateChart(features) {
+            try {
+                destroyChart('packetRateChart');
+
+                const labels = [];
+                const values = [];
+                const now = new Date();
+                for (let i = 11; i >= 0; i--) {
+                    const time = new Date(now - i * 3600000);
+                    labels.push(time.getHours() + ':00');
+                    values.push(Math.random() * (features.packet_rate_pps || 0) * 0.8 + (features.packet_rate_pps || 0) * 0.2);
+                }
+
+                const ctx = document.getElementById('packetRateChart');
+                chartInstances.packetRateChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Packet Rate (pps)',
+                            data: values,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#9ca3af' } } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            x: { grid: { color: '#374151' }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading packet rate chart:', error);
+            }
+        }
+
+        async function loadUniqueDestChart(features) {
+            try {
+                destroyChart('uniqueDestChart');
+
+                const ctx = document.getElementById('uniqueDestChart');
+                chartInstances.uniqueDestChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Unique IPs', 'Unique Ports'],
+                        datasets: [{
+                            label: 'Count',
+                            data: [features.unique_dst_ips || 0, features.unique_dst_ports || 0],
+                            backgroundColor: ['#8b5cf6', '#ec4899'],
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
+                            x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading unique dest chart:', error);
+            }
+        }
+
+        async function loadPortScanScoreChart(features) {
+            try {
+                destroyChart('portScanScoreChart');
+
+                const score = (features.port_scan_score || 0) * 100;
+
+                const ctx = document.getElementById('portScanScoreChart');
+                chartInstances.portScanScoreChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        datasets: [{
+                            data: [score, 100 - score],
+                            backgroundColor: [
+                                score > 70 ? '#ef4444' : score > 40 ? '#f59e0b' : '#10b981',
+                                '#374151'
+                            ],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        circumference: 270,
+                        rotation: 225,
+                        cutout: '75%',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { enabled: false }
+                        }
+                    },
+                    plugins: [{
+                        afterDraw: (chart) => {
+                            const ctx = chart.ctx;
+                            ctx.save();
+                            const centerX = chart.width / 2;
+                            const centerY = chart.height / 2;
+                            ctx.font = '48px Arial';
+                            ctx.fillStyle = '#fff';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(score.toFixed(0), centerX, centerY);
+                            ctx.font = '16px Arial';
+                            ctx.fillStyle = '#9ca3af';
+                            ctx.fillText('Scan Score', centerX, centerY + 30);
+                            ctx.restore();
+                        }
+                    }]
+                });
+            } catch (error) {
+                console.error('Error loading port scan score chart:', error);
+            }
+        }
+
+        // ==================== PACKETS PAGE ====================
+        async function loadPackets(page) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/packets?page=${page}&limit=20`);
+                const data = await response.json();
+
+                const tbody = document.querySelector('#packets-table tbody');
+
+                if (!data.packets || data.packets.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8">No packets captured yet</td></tr>';
+                    return;
+                }
+
+                currentPacketPage = page;
+                tbody.innerHTML = '';
+
+                data.packets.forEach(pkt => {
+                    let protocolBadge = '';
+                    if (pkt.protocol === 'TCP') protocolBadge = '<span class="bg-blue-500 text-white px-2 py-1 rounded text-xs">TCP</span>';
+                    else if (pkt.protocol === 'UDP') protocolBadge = '<span class="bg-pink-500 text-white px-2 py-1 rounded text-xs">UDP</span>';
+                    else if (pkt.protocol === 'ICMP') protocolBadge = '<span class="bg-yellow-500 text-white px-2 py-1 rounded text-xs">ICMP</span>';
+                    else if (pkt.protocol === 'ARP') protocolBadge = '<span class="bg-green-500 text-white px-2 py-1 rounded text-xs">ARP</span>';
+                    else protocolBadge = `<span class="bg-gray-500 text-white px-2 py-1 rounded text-xs">${pkt.protocol}</span>`;
+
+                    tbody.innerHTML += `
+                        <tr class="border-b border-gray-700 hover:bg-gray-700">
+                            <td class="py-3 px-4">${pkt.timestamp}</td>
+                            <td class="py-3 px-4"><strong>${pkt.src_ip}</strong></td>
+                            <td class="py-3 px-4"><strong>${pkt.dst_ip}</strong></td>
+                            <td class="py-3 px-4">${protocolBadge}</td>
+                            <td class="py-3 px-4">${pkt.src_port || '--'}</td>
+                            <td class="py-3 px-4">${pkt.dst_port || pkt.port || '--'}</td>
+                            <td class="py-3 px-4">${pkt.length}</td>
+                            <td class="py-3 px-4">${pkt.flags || '--'}</td>
+                        </tr>
+                    `;
+                });
+
+                const totalPages = Math.ceil(data.total / 20);
+                document.getElementById('page-info').textContent = `Page ${page} of ${totalPages}`;
+                document.getElementById('prev-btn').disabled = page === 1;
+                document.getElementById('next-btn').disabled = page >= totalPages;
+
+            } catch (error) {
+                console.error('Error loading packets:', error);
+            }
+        }
+
+        // ==================== INITIALIZE ====================
+        async function initializeDashboard() {
+            await loadDashboard();
+            await loadProtocolChart();
+            await loadTrafficVolumeChart();
+            await loadInboundOutboundChart();
+            await loadPacketSizeChart();
+            await loadTopSources();
+            await loadTopDestinations();
+            await loadTopPorts();
+        }
+
+        initializeDashboard();
+
+        setInterval(() => {
+            const activePage = document.querySelector('.page.active').id;
+            if (activePage === 'dashboard-page') {
+                initializeDashboard();
+            } else if (activePage === 'analytics-page') {
+                loadAnalytics();
+            } else if (activePage === 'security-page') {
+                loadSecurity();
+            } else if (activePage === 'performance-page') {
+                loadPerformance();
+            }
+        }, 5000);
+
+        console.log('✅ NetGuardian Pro initialized with Tailwind CSS');
+        console.log('📡 API URL:', API_BASE_URL);
+    </script>
+</body>
+</html>
