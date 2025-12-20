@@ -1,180 +1,269 @@
-from fastapi import FastAPI, HTTPException
+"""
+NetGuardian Pro - Production Server
+=====================================
+Merged from server_sos/main.py + server/app/main.py
+
+Features:
+- PostgreSQL database connection
+- XGBoost ML pipeline with label encoder
+- Background prediction loop (threading)
+- File upload packet ingestion (JSON)
+- Complete dashboard API endpoints
+- 3 new port category features
+"""
+
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
-from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, Boolean, DateTime, Text, select
-from sqlalchemy.orm import sessionmaker
-from typing import List, Optional
-from datetime import datetime
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Text, Boolean, BigInteger, desc, func
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.dialects.postgresql import JSON
+from datetime import datetime, timedelta
 import pandas as pd
+import numpy as np
 import joblib
 import logging
+import threading
+import time
+import json
+import tempfile
+import os
+from pathlib import Path
+from typing import List, Dict, Optional
+import uvicorn
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# ========== CONFIGURATION ==========
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# ------------------- Database Setup -------------------
-# Using SQLite for testing (comment this and uncomment PostgreSQL for production)
-DATABASE_URL = "sqlite:///./traffic_analyzer.db"
-# DATABASE_URL = "postgresql://postgres:987456@localhost:5432/Traffic_Analyzer"
+# Paths
+SERVER_DIR = Path(__file__).parent
+APP_DIR = SERVER_DIR  # We're in server/app/
+SERVER_ROOT = APP_DIR.parent  # server/
+MODEL_DIR = SERVER_ROOT / "models"
+TEMPLATES_DIR = SERVER_ROOT / "templates"
+STATIC_DIR = SERVER_ROOT / "static"
+DASHBOARD_FILE = TEMPLATES_DIR / "netguardian_tailwind.html"
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
-metadata = MetaData()
+# Database - PostgreSQL
+DATABASE_URL = "postgresql://postgres:987456@localhost:5432/NetGuardian Pro"
 
-# Table 1: Raw Packets (for logging and audit trail)
-raw_packets_table = Table(
-    "raw_packets", metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("timestamp", Float),
-    Column("interface", String),
-    Column("src_ip", String),
-    Column("dst_ip", String),
-    Column("protocol", String),
-    Column("length", Integer),
-    Column("src_port", Integer, nullable=True),
-    Column("dst_port", Integer, nullable=True),
-    Column("tcp_flags", String, nullable=True),
-    Column("tcp_syn", Boolean, nullable=True),
-    Column("tcp_ack", Boolean, nullable=True),
-    Column("tcp_fin", Boolean, nullable=True),
-    Column("tcp_rst", Boolean, nullable=True),
-    Column("tcp_psh", Boolean, nullable=True),
-    Column("seq", Integer, nullable=True),
-    Column("ack", Integer, nullable=True),
-    Column("icmp_type", Integer, nullable=True),
-    Column("icmp_code", Integer, nullable=True),
-    Column("arp_op", Integer, nullable=True),
-    Column("arp_psrc", String, nullable=True),
-    Column("arp_pdst", String, nullable=True),
-    Column("arp_hwsrc", String, nullable=True),
-    Column("arp_hwdst", String, nullable=True),
-    Column("dns_query", Boolean, nullable=True),
-    Column("dns_qname", String, nullable=True),
-    Column("dns_qtype", Integer, nullable=True),
-    Column("dns_response", Boolean, nullable=True),
-    Column("dns_answer_count", Integer, nullable=True),
-    Column("dns_answer_size", Integer, nullable=True),
-    Column("http_method", String, nullable=True),
-    Column("http_path", String, nullable=True),
-    Column("http_status_code", String, nullable=True),
-    Column("http_host", String, nullable=True),
-    Column("inserted_at", DateTime, default=datetime.utcnow)
-)
+# ML Model files (from server/models/)
+XGB_MODEL_PATH = MODEL_DIR / "xgb_model.pkl"
+LABEL_ENCODER_PATH = MODEL_DIR / "label_encoder.pkl"
+FEATURE_NAMES_PATH = MODEL_DIR / "feature_names.pkl"
 
-# Table 2: Aggregated Features (from multi_window_aggregator)
-aggregated_features_table = Table(
-    "aggregated_features", metadata,
-    # Identity
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("src_ip", String),
-    Column("window_start", DateTime),
-    Column("window_end", DateTime),
-    Column("window_size", Integer),  # 5, 30, or 180 seconds
-    
-    # Generic features
-    Column("packet_count", Integer),
-    Column("packet_rate_pps", Float),
-    Column("byte_count", Integer),
-    Column("byte_rate_bps", Float),
-    Column("avg_packet_size", Float),
-    Column("packet_size_variance", Float),
-    Column("tcp_count", Integer),
-    Column("udp_count", Integer),
-    Column("icmp_count", Integer),
-    Column("arp_count", Integer),
-    Column("unique_dst_ips", Integer),
-    Column("unique_dst_ports", Integer),
-    
-    # TCP/DDoS/Scan features
-    Column("tcp_syn_count", Integer),
-    Column("tcp_ack_count", Integer),
-    Column("syn_rate_pps", Float),
-    Column("syn_ack_rate_pps", Float),
-    Column("syn_to_synack_ratio", Float),
-    Column("half_open_count", Integer),
-    Column("sequential_port_count", Integer),
-    Column("scan_rate_pps", Float),
-    Column("distinct_targets_count", Integer),
-    Column("syn_only_ratio", Float),
-    Column("icmp_rate_pps", Float),
-    Column("udp_rate_pps", Float),
-    Column("udp_dest_port_count", Integer),
-    
-    # Bruteforce features
-    Column("ssh_connection_attempts", Integer, nullable=True),
-    Column("ftp_connection_attempts", Integer, nullable=True),
-    Column("http_login_attempts", Integer, nullable=True),
-    Column("login_request_rate", Float, nullable=True),
-    Column("failed_login_count", Integer, nullable=True),
-    Column("auth_attempts_per_min", Float, nullable=True),
-    
-    # ARP features
-    Column("arp_request_count", Integer, nullable=True),
-    Column("arp_reply_count", Integer, nullable=True),
-    Column("gratuitous_arp_count", Integer, nullable=True),
-    Column("arp_binding_flap_count", Integer, nullable=True),
-    Column("arp_reply_without_request_count", Integer, nullable=True),
-    
-    # DNS features
-    Column("dns_query_count", Integer, nullable=True),
-    Column("query_rate_qps", Float, nullable=True),
-    Column("unique_qnames_count", Integer, nullable=True),
-    Column("avg_subdomain_entropy", Float, nullable=True),
-    Column("pct_high_entropy_queries", Float, nullable=True),
-    Column("txt_record_count", Integer, nullable=True),
-    Column("avg_answer_size", Float, nullable=True),
-    Column("distinct_record_types", Integer, nullable=True),
-    Column("avg_query_interval_ms", Float, nullable=True),
-    
-    # Slowloris features
-    Column("open_conn_count", Integer, nullable=True),
-    Column("avg_conn_duration", Float, nullable=True),
-    Column("bytes_per_conn", Float, nullable=True),
-    Column("partial_http_count", Integer, nullable=True),
-    Column("request_completion_ratio", Float, nullable=True),
-    
-    # ML prediction (added later by ML service)
-    Column("predicted_label", String, nullable=True),
-    Column("confidence", Float, nullable=True),
-    
-    Column("created_at", DateTime, default=datetime.utcnow)
-)
+# Prediction settings
+PREDICTION_INTERVAL = 10  # seconds between prediction checks
+CONFIDENCE_HIGH = 0.9
+CONFIDENCE_MEDIUM = 0.7
 
-# Table 3: Detected Alerts (security events from ML)
-detected_alerts_table = Table(
-    "detected_alerts", metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("src_ip", String),
-    Column("dst_ip", String, nullable=True),
-    Column("attack_type", String),
-    Column("confidence", Float),
-    Column("severity", String),  # LOW, MEDIUM, HIGH, CRITICAL
-    Column("window_size", Integer),
-    Column("packet_count", Integer),
-    Column("byte_count", Integer),
-    Column("details", Text, nullable=True),  # JSON with additional info
-    Column("detected_at", DateTime),
-    Column("resolved", Boolean, default=False),
-    Column("resolved_at", DateTime, nullable=True),
-    Column("created_at", DateTime, default=datetime.utcnow)
-)
+# ========== DATABASE SETUP ==========
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine)
+Base = declarative_base()
 
-metadata.create_all(engine)
-Session = sessionmaker(bind=engine)
 
-# ------------------- Load ML Model -------------------
+# ========== ORM MODELS ==========
+class RawPacket(Base):
+    __tablename__ = "raw_packets"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(Float, nullable=False, index=True)
+    interface = Column(String(50))
+    src_ip = Column(String(50), nullable=False, index=True)
+    dst_ip = Column(String(50), nullable=False, index=True)
+    protocol = Column(String(20), nullable=False, index=True)
+    length = Column(Integer, nullable=False)
+    src_port = Column(Integer)
+    dst_port = Column(Integer)
+    tcp_flags = Column(String(50))
+    tcp_syn = Column(Boolean)
+    tcp_ack = Column(Boolean)
+    tcp_fin = Column(Boolean)
+    tcp_rst = Column(Boolean)
+    tcp_psh = Column(Boolean)
+    seq = Column(BigInteger)
+    ack = Column(BigInteger)
+    icmp_type = Column(Integer)
+    icmp_code = Column(Integer)
+    arp_op = Column(Integer)
+    arp_psrc = Column(String(50))
+    arp_pdst = Column(String(50))
+    arp_hwsrc = Column(String(50))
+    arp_hwdst = Column(String(50))
+    dns_query = Column(Boolean)
+    dns_qname = Column(String(255))
+    dns_qtype = Column(Integer)
+    dns_response = Column(Boolean)
+    dns_answer_count = Column(Integer)
+    dns_answer_size = Column(Integer)
+    http_method = Column(String(10))
+    http_path = Column(String(500))
+    http_status_code = Column(String(10))
+    http_host = Column(String(255))
+    inserted_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class AggregatedFeature(Base):
+    __tablename__ = 'aggregated_features'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    window_start = Column(DateTime, nullable=False, index=True)
+    window_end = Column(DateTime, nullable=False)
+    window_size = Column(Integer, nullable=False)
+    src_ip = Column(String(50), nullable=False, index=True)
+    
+    # Generic features (12)
+    packet_count = Column(Integer, default=0)
+    packet_rate_pps = Column(Float, default=0.0)
+    byte_count = Column(BigInteger, default=0)
+    byte_rate_bps = Column(Float, default=0.0)
+    avg_packet_size = Column(Float, default=0.0)
+    packet_size_variance = Column(Float, default=0.0)
+    tcp_count = Column(Integer, default=0)
+    udp_count = Column(Integer, default=0)
+    icmp_count = Column(Integer, default=0)
+    arp_count = Column(Integer, default=0)
+    unique_dst_ips = Column(Integer, default=0)
+    unique_dst_ports = Column(Integer, default=0)
+    
+    # TCP/DDoS/Scan features (13)
+    tcp_syn_count = Column(Integer, default=0)
+    tcp_ack_count = Column(Integer, default=0)
+    syn_rate_pps = Column(Float, default=0.0)
+    syn_ack_rate_pps = Column(Float, default=0.0)
+    syn_to_synack_ratio = Column(Float, default=0.0)
+    half_open_count = Column(Integer, default=0)
+    sequential_port_count = Column(Integer, default=0)
+    scan_rate_pps = Column(Float, default=0.0)
+    distinct_targets_count = Column(Integer, default=0)
+    syn_only_ratio = Column(Float, default=0.0)
+    icmp_rate_pps = Column(Float, default=0.0)
+    udp_rate_pps = Column(Float, default=0.0)
+    udp_dest_port_count = Column(Integer, default=0)
+    
+    # Brute force features (6)
+    ssh_connection_attempts = Column(Integer, default=0)
+    ftp_connection_attempts = Column(Integer, default=0)
+    http_login_attempts = Column(Integer, default=0)
+    login_request_rate = Column(Float, default=0.0)
+    failed_login_count = Column(Integer, default=0)
+    auth_attempts_per_min = Column(Float, default=0.0)
+    
+    # ARP features (10)
+    arp_request_count = Column(Integer, default=0)
+    arp_reply_count = Column(Integer, default=0)
+    gratuitous_arp_count = Column(Integer, default=0)
+    arp_binding_flap_count = Column(Integer, default=0)
+    arp_reply_without_request_count = Column(Integer, default=0)
+    unique_macs_per_ip_max = Column(Integer, default=0)
+    avg_macs_per_ip = Column(Float, default=0.0)
+    duplicate_mac_ips = Column(Integer, default=0)
+    mac_ip_ratio = Column(Float, default=0.0)
+    suspicious_mac_changes = Column(Integer, default=0)
+    
+    # DNS features (14)
+    dns_query_count = Column(Integer, default=0)
+    query_rate_qps = Column(Float, default=0.0)
+    unique_qnames_count = Column(Integer, default=0)
+    avg_subdomain_entropy = Column(Float, default=0.0)
+    pct_high_entropy_queries = Column(Float, default=0.0)
+    txt_record_count = Column(Integer, default=0)
+    avg_answer_size = Column(Float, default=0.0)
+    distinct_record_types = Column(Integer, default=0)
+    avg_query_interval_ms = Column(Float, default=0.0)
+    avg_subdomain_length = Column(Float, default=0.0)
+    max_subdomain_length = Column(Integer, default=0)
+    avg_label_count = Column(Float, default=0.0)
+    dns_to_udp_ratio = Column(Float, default=0.0)
+    udp_port_53_count = Column(Integer, default=0)
+    
+    # Slowloris features (5)
+    open_conn_count = Column(Integer, default=0)
+    avg_conn_duration = Column(Float, default=0.0)
+    bytes_per_conn = Column(Float, default=0.0)
+    partial_http_count = Column(Integer, default=0)
+    request_completion_ratio = Column(Float, default=0.0)
+    
+    # NEW: Port category features (3)
+    tcp_ports_hit = Column(Integer, default=0)
+    udp_ports_hit = Column(Integer, default=0)
+    remote_conn_port_hits = Column(Integer, default=0)
+    
+    # ML prediction results
+    predicted_label = Column(String(50))
+    confidence = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class DetectedAlert(Base):
+    __tablename__ = 'detected_alerts'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    src_ip = Column(String(50), nullable=False, index=True)
+    dst_ip = Column(String(50), index=True)
+    attack_type = Column(String(100), nullable=False, index=True)
+    confidence = Column(Float, nullable=False)
+    severity = Column(String(20), nullable=False, index=True)
+    window_size = Column(Integer, nullable=False)
+    packet_count = Column(Integer, default=0)
+    byte_count = Column(BigInteger, default=0)
+    details = Column(JSON)
+    detected_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    resolved = Column(Boolean, default=False, index=True)
+    resolved_at = Column(DateTime)
+
+
+# Create tables
+Base.metadata.create_all(engine)
+
+# ========== LOAD ML MODEL ==========
+logger.info("=" * 60)
+logger.info("🚀 NetGuardian Pro - Production Server")
+logger.info("=" * 60)
+
 try:
-    model = joblib.load("AI_model.pkl")
-    logger.info("ML model loaded successfully")
+    logger.info(f"📂 Loading ML model from: {MODEL_DIR}")
+    xgb_model = joblib.load(XGB_MODEL_PATH)
+    label_encoder = joblib.load(LABEL_ENCODER_PATH)
+    feature_names = joblib.load(FEATURE_NAMES_PATH)
+    
+    logger.info(f"✅ XGBoost model loaded successfully")
+    logger.info(f"✅ Label encoder loaded: {len(label_encoder.classes_)} classes")
+    logger.info(f"✅ Feature names loaded: {len(feature_names)} features")
+    logger.info(f"   Classes: {list(label_encoder.classes_)}")
+    
+    MODEL_LOADED = True
 except Exception as e:
-    logger.error(f"Failed to load ML model: {e}")
-    model = None
+    logger.error(f"❌ Failed to load ML model: {e}")
+    MODEL_LOADED = False
+    xgb_model = None
+    label_encoder = None
+    feature_names = None
 
-# ------------------- FastAPI App -------------------
-app = FastAPI(title="Network Traffic Analyzer API")
+# ========== LOAD AGGREGATOR ==========
+try:
+    import sys
+    sys.path.insert(0, str(APP_DIR))
+    from MultiWindowAggregator import MultiWindowAggregator
+    aggregator = MultiWindowAggregator(window_sizes=[5, 30, 180])
+    AGGREGATOR_AVAILABLE = True
+    logger.info("✅ MultiWindowAggregator loaded successfully")
+except ImportError as e:
+    AGGREGATOR_AVAILABLE = False
+    aggregator = None
+    logger.warning(f"⚠️ MultiWindowAggregator not found: {e}")
 
-# Add CORS middleware for dashboard
-from fastapi.middleware.cors import CORSMiddleware
+# ========== FASTAPI APP ==========
+app = FastAPI(
+    title="NetGuardian Pro Dashboard",
+    description="Real-time network attack detection with XGBoost ML",
+    version="2.0.0"
+)
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -183,822 +272,743 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ------------------- Pydantic Models -------------------
-class RawPacket(BaseModel):
-    timestamp: float
-    interface: str
-    src_ip: Optional[str] = None
-    dst_ip: Optional[str] = None
-    protocol: Optional[str] = None
-    length: int
-    src_port: Optional[int] = None
-    dst_port: Optional[int] = None
-    tcp_flags: Optional[str] = None
-    tcp_syn: Optional[bool] = None
-    tcp_ack: Optional[bool] = None
-    tcp_fin: Optional[bool] = None
-    tcp_rst: Optional[bool] = None
-    tcp_psh: Optional[bool] = None
-    seq: Optional[int] = None
-    ack: Optional[int] = None
-    icmp_type: Optional[int] = None
-    icmp_code: Optional[int] = None
-    arp_op: Optional[int] = None
-    arp_psrc: Optional[str] = None
-    arp_pdst: Optional[str] = None
-    arp_hwsrc: Optional[str] = None
-    arp_hwdst: Optional[str] = None
-    dns_query: Optional[bool] = None
-    dns_qname: Optional[str] = None
-    dns_qtype: Optional[int] = None
-    dns_response: Optional[bool] = None
-    dns_answer_count: Optional[int] = None
-    dns_answer_size: Optional[int] = None
-    http_method: Optional[str] = None
-    http_path: Optional[str] = None
-    http_status_code: Optional[str] = None
-    http_host: Optional[str] = None
+# Mount static files
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-class Traffic(BaseModel):
-    dest_ip: str
-    source_mac: str
-    dest_mac: str
-    packet_count: int
-    packet_per_sec: float
-    byte_count: int
-    byte_per_sec: float
-    tcp_flags: str
-    connection_attempts: int
-    unique_ports: int
-    protocol: str
 
-# ------------------- Helper Functions -------------------
-def prepare_features(data):
-    """Prepare features for ML model prediction"""
-    df = pd.DataFrame([data])
+# ========== HELPER FUNCTIONS ==========
+def get_severity(confidence: float) -> str:
+    """Determine alert severity based on confidence score"""
+    if confidence >= CONFIDENCE_HIGH:
+        return "CRITICAL"
+    elif confidence >= CONFIDENCE_MEDIUM:
+        return "HIGH"
+    elif confidence >= 0.5:
+        return "MEDIUM"
+    else:
+        return "LOW"
+
+
+def prepare_packet_dict(row):
+    """Prepare packet dictionary with proper type handling"""
+    packet_dict = {}
     
-    # Ensure text values are strings
-    df['protocol'] = df['protocol'].astype(str)
-    df['tcp_flags'] = df['tcp_flags'].astype(str)
+    # Required fields
+    packet_dict['timestamp'] = float(row.get('timestamp', 0))
+    packet_dict['interface'] = str(row.get('interface', 'eth0')) if pd.notna(row.get('interface')) else 'eth0'
+    packet_dict['src_ip'] = str(row.get('src_ip', '0.0.0.0')) if pd.notna(row.get('src_ip')) else '0.0.0.0'
+    packet_dict['dst_ip'] = str(row.get('dst_ip', '0.0.0.0')) if pd.notna(row.get('dst_ip')) else '0.0.0.0'
+    packet_dict['protocol'] = str(row.get('protocol', 'UNKNOWN')) if pd.notna(row.get('protocol')) else 'UNKNOWN'
+    packet_dict['length'] = int(row.get('length', 0)) if pd.notna(row.get('length')) else 0
     
-    # One-hot encoding
-    df = pd.get_dummies(df, columns=['protocol', 'tcp_flags'])
+    # Optional port fields
+    packet_dict['src_port'] = int(row.get('src_port', 0)) if pd.notna(row.get('src_port')) else None
+    packet_dict['dst_port'] = int(row.get('dst_port', 0)) if pd.notna(row.get('dst_port')) else None
     
-    # Add missing columns according to model
-    for col in model.feature_names_in_:
-        if col not in df.columns:
-            df[col] = 0
-
-    df = df[model.feature_names_in_]
+    # TCP fields
+    packet_dict['tcp_flags'] = str(row.get('tcp_flags', '')) if pd.notna(row.get('tcp_flags')) else None
+    packet_dict['tcp_syn'] = bool(row.get('tcp_syn')) if pd.notna(row.get('tcp_syn')) else None
+    packet_dict['tcp_ack'] = bool(row.get('tcp_ack')) if pd.notna(row.get('tcp_ack')) else None
+    packet_dict['tcp_fin'] = bool(row.get('tcp_fin')) if pd.notna(row.get('tcp_fin')) else None
+    packet_dict['tcp_rst'] = bool(row.get('tcp_rst')) if pd.notna(row.get('tcp_rst')) else None
+    packet_dict['tcp_psh'] = bool(row.get('tcp_psh')) if pd.notna(row.get('tcp_psh')) else None
+    packet_dict['seq'] = int(row.get('seq', 0)) if pd.notna(row.get('seq')) else None
+    packet_dict['ack'] = int(row.get('ack', 0)) if pd.notna(row.get('ack')) else None
     
-    # Convert to float to avoid dtype issues
-    df = df.astype(float)
-    return df
+    # ICMP fields
+    packet_dict['icmp_type'] = int(row.get('icmp_type', 0)) if pd.notna(row.get('icmp_type')) else None
+    packet_dict['icmp_code'] = int(row.get('icmp_code', 0)) if pd.notna(row.get('icmp_code')) else None
+    
+    # ARP fields
+    packet_dict['arp_op'] = int(row.get('arp_op', 0)) if pd.notna(row.get('arp_op')) else None
+    packet_dict['arp_psrc'] = str(row.get('arp_psrc', '')) if pd.notna(row.get('arp_psrc')) else None
+    packet_dict['arp_pdst'] = str(row.get('arp_pdst', '')) if pd.notna(row.get('arp_pdst')) else None
+    packet_dict['arp_hwsrc'] = str(row.get('arp_hwsrc', '')) if pd.notna(row.get('arp_hwsrc')) else None
+    packet_dict['arp_hwdst'] = str(row.get('arp_hwdst', '')) if pd.notna(row.get('arp_hwdst')) else None
+    
+    # DNS fields
+    packet_dict['dns_query'] = bool(row.get('dns_query')) if pd.notna(row.get('dns_query')) else None
+    packet_dict['dns_qname'] = str(row.get('dns_qname', '')) if pd.notna(row.get('dns_qname')) else None
+    packet_dict['dns_qtype'] = int(row.get('dns_qtype', 0)) if pd.notna(row.get('dns_qtype')) else None
+    packet_dict['dns_response'] = bool(row.get('dns_response')) if pd.notna(row.get('dns_response')) else None
+    packet_dict['dns_answer_count'] = int(row.get('dns_answer_count', 0)) if pd.notna(row.get('dns_answer_count')) else None
+    packet_dict['dns_answer_size'] = int(row.get('dns_answer_size', 0)) if pd.notna(row.get('dns_answer_size')) else None
+    
+    # HTTP fields
+    packet_dict['http_method'] = str(row.get('http_method', '')) if pd.notna(row.get('http_method')) and row.get('http_method') != 0 else None
+    packet_dict['http_path'] = str(row.get('http_path', '')) if pd.notna(row.get('http_path')) else None
+    packet_dict['http_status_code'] = str(row.get('http_status_code', '')) if pd.notna(row.get('http_status_code')) and row.get('http_status_code') != 0 else None
+    packet_dict['http_host'] = str(row.get('http_host', '')) if pd.notna(row.get('http_host')) else None
+    
+    return packet_dict
 
-# ------------------- API Endpoints -------------------
 
-@app.post("/ingest_packets")
-async def ingest_packets(packets: List[RawPacket]):
-    """
-    Ingest batch of raw packets from sniffer.
-    1. Store raw packets in raw_packets table
-    2. Run aggregation via multi_window_aggregator
-    3. Store aggregated features in aggregated_features table
-    4. Generate alerts if attacks detected
-    """
-    import sys
-    import os
+def predict_and_alert(db_session, feature_row: AggregatedFeature) -> Optional[Dict]:
+    """Run prediction on aggregated feature and create alert if attack detected"""
+    if not MODEL_LOADED:
+        return None
     
     try:
-        # 1. Store raw packets
-        with engine.begin() as conn:
-            for packet in packets:
-                ins = raw_packets_table.insert().values(**packet.dict())
-                conn.execute(ins)
+        # Build feature vector in correct order
+        feature_dict = {col: getattr(feature_row, col, 0) or 0 for col in feature_names}
+        feature_df = pd.DataFrame([feature_dict])
         
-        logger.info(f"Inserted {len(packets)} raw packets into database")
+        # Predict
+        prediction = xgb_model.predict(feature_df)[0]
+        probabilities = xgb_model.predict_proba(feature_df)[0]
+        confidence = float(np.max(probabilities))
+        predicted_label = label_encoder.inverse_transform([prediction])[0]
         
-        # 2. Run aggregation
+        # Update aggregated feature with prediction
+        feature_row.predicted_label = predicted_label
+        feature_row.confidence = confidence
+        
+        result = {
+            "id": feature_row.id,
+            "src_ip": feature_row.src_ip,
+            "predicted_label": predicted_label,
+            "confidence": confidence,
+            "window_size": feature_row.window_size
+        }
+        
+        # Create alert if attack detected (not Normal)
+        if predicted_label.lower() != "normal":
+            severity = get_severity(confidence)
+            
+            alert = DetectedAlert(
+                src_ip=feature_row.src_ip,
+                dst_ip=None,
+                attack_type=predicted_label,
+                confidence=confidence,
+                severity=severity,
+                window_size=feature_row.window_size,
+                packet_count=feature_row.packet_count or 0,
+                byte_count=feature_row.byte_count or 0,
+                details={"message": f"Detected {predicted_label} attack from {feature_row.src_ip} with {confidence:.2%} confidence"},
+                detected_at=datetime.utcnow()
+            )
+            db_session.add(alert)
+            
+            result["alert_created"] = True
+            result["severity"] = severity
+            logger.warning(f"🚨 ALERT: {predicted_label} from {feature_row.src_ip} ({confidence:.2%} confidence)")
+        else:
+            result["alert_created"] = False
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        return None
+
+
+def run_predictions():
+    """Background task: Check for unpredicted features and run predictions"""
+    while True:
         try:
-            # Import aggregator
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from multi_window_aggregator import MultiWindowAggregator
+            db = SessionLocal()
             
-            # Convert packets to DataFrame
-            packet_dicts = [p.dict() for p in packets]
-            df = pd.DataFrame(packet_dicts)
+            # Find aggregated features without predictions
+            unpredicted = db.query(AggregatedFeature).filter(
+                AggregatedFeature.predicted_label == None
+            ).limit(100).all()
             
-            if not df.empty and 'timestamp' in df.columns and 'src_ip' in df.columns:
-                # Process with aggregator
-                aggregator = MultiWindowAggregator(window_sizes=[5, 30, 180])
-                features_df = aggregator.process_dataframe(df)
+            if unpredicted:
+                logger.info(f"🔍 Found {len(unpredicted)} features to predict")
                 
-                # 3. Store aggregated features
-                if not features_df.empty:
-                    with engine.begin() as conn:
-                        for _, row in features_df.iterrows():
-                            # Convert row to dict, handling NaN values
-                            record = {}
-                            for col in row.index:
-                                val = row[col]
-                                if pd.isna(val):
-                                    record[col] = None
-                                elif hasattr(val, 'isoformat'):  # datetime
-                                    record[col] = val
-                                else:
-                                    record[col] = val
-                            
-                            ins = aggregated_features_table.insert().values(**record)
-                            conn.execute(ins)
-                    
-                    logger.info(f"Stored {len(features_df)} aggregated feature records")
-                    
-                    # 4. Generate alerts using XGBoost ML model prediction
-                    alerts_generated = 0
-                    
-                    if model is not None:
-                        for _, row in features_df.iterrows():
-                            try:
-                                # Prepare features for ML prediction
-                                feature_cols = [
-                                    'packet_count', 'packet_rate_pps', 'byte_count', 'byte_rate_bps',
-                                    'avg_packet_size', 'packet_size_variance',
-                                    'tcp_count', 'udp_count', 'icmp_count', 'arp_count',
-                                    'unique_dst_ips', 'unique_dst_ports',
-                                    'tcp_syn_count', 'tcp_ack_count', 'syn_rate_pps', 'syn_ack_rate_pps',
-                                    'syn_to_synack_ratio', 'half_open_count', 'sequential_port_count',
-                                    'scan_rate_pps', 'distinct_targets_count', 'syn_only_ratio',
-                                    'icmp_rate_pps', 'udp_rate_pps', 'udp_dest_port_count',
-                                    'dns_query_count', 'query_rate_qps', 'unique_qnames_count',
-                                    'avg_subdomain_entropy'
-                                ]
-                                
-                                # Build feature vector
-                                feature_values = []
-                                for col in feature_cols:
-                                    val = row.get(col, 0)
-                                    feature_values.append(float(val) if val is not None and not pd.isna(val) else 0.0)
-                                
-                                # Create DataFrame for prediction
-                                X = pd.DataFrame([feature_values], columns=feature_cols)
-                                
-                                # Add missing columns if model expects them
-                                if hasattr(model, 'feature_names_in_'):
-                                    for col in model.feature_names_in_:
-                                        if col not in X.columns:
-                                            X[col] = 0
-                                    X = X[model.feature_names_in_]
-                                
-                                # Get prediction
-                                prediction = model.predict(X)[0]
-                                
-                                # Get confidence (probability) if available
-                                confidence = 85.0  # Default
-                                if hasattr(model, 'predict_proba'):
-                                    proba = model.predict_proba(X)[0]
-                                    confidence = float(max(proba) * 100)
-                                
-                                # Map prediction to attack type
-                                attack_type = str(prediction)
-                                
-                                # Only generate alert if NOT normal traffic
-                                if attack_type.lower() not in ['normal', 'benign', '0', 'none']:
-                                    # Determine severity based on attack type and confidence
-                                    if confidence >= 90:
-                                        severity = "CRITICAL"
-                                    elif confidence >= 75:
-                                        severity = "HIGH"
-                                    elif confidence >= 60:
-                                        severity = "MEDIUM"
-                                    else:
-                                        severity = "LOW"
-                                    
-                                    # Store alert
-                                    with engine.begin() as conn:
-                                        alert = {
-                                            'src_ip': row.get('src_ip'),
-                                            'dst_ip': None,
-                                            'attack_type': attack_type,
-                                            'confidence': confidence,
-                                            'severity': severity,
-                                            'window_size': row.get('window_size'),
-                                            'packet_count': int(row.get('packet_count', 0) or 0),
-                                            'byte_count': int(row.get('byte_count', 0) or 0),
-                                            'details': None,
-                                            'detected_at': datetime.utcnow(),
-                                            'resolved': False,
-                                            'resolved_at': None
-                                        }
-                                        ins = detected_alerts_table.insert().values(**alert)
-                                        conn.execute(ins)
-                                        alerts_generated += 1
-                                        
-                            except Exception as pred_error:
-                                logger.error(f"Prediction error for row: {pred_error}")
-                                continue
-                    else:
-                        logger.warning("ML model not loaded - skipping attack detection")
-                    
-                    if alerts_generated > 0:
-                        logger.warning(f"Generated {alerts_generated} security alerts!")
+                for feature in unpredicted:
+                    predict_and_alert(db, feature)
+                
+                db.commit()
+                logger.info(f"✅ Processed {len(unpredicted)} predictions")
+            
+            db.close()
+            
+        except Exception as e:
+            logger.error(f"Prediction loop error: {e}")
         
-        except Exception as agg_error:
-            logger.error(f"Aggregation error (non-fatal): {agg_error}")
-            # Continue - aggregation failure shouldn't block packet ingestion
+        time.sleep(PREDICTION_INTERVAL)
+
+
+# ========== INGESTION ENDPOINTS ==========
+
+async def _process_packets(packets_list: list, db) -> dict:
+    """Common packet processing logic for both ingestion methods"""
+    tmp_path = None
+    
+    try:
+        # Convert to DataFrame
+        df = pd.DataFrame(packets_list)
+        
+        # Convert timestamp to float if needed
+        if 'timestamp' in df.columns:
+            if not pd.api.types.is_numeric_dtype(df['timestamp']):
+                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+                df["timestamp"] = df["timestamp"].astype("int64") / 1e9
+        
+        df.fillna(0, inplace=True)
+        
+        # Save as temp CSV for aggregator
+        if AGGREGATOR_AVAILABLE:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode='w', newline='') as tmp:
+                tmp_path = tmp.name
+                df.to_csv(tmp_path, index=False)
+        
+        # Store raw packets
+        raw_rows = []
+        for _, row in df.iterrows():
+            try:
+                packet_dict = prepare_packet_dict(row)
+                raw_rows.append(RawPacket(**packet_dict))
+            except Exception as e:
+                logger.error(f"Error preparing packet: {e}")
+                continue
+        
+        db.bulk_save_objects(raw_rows)
+        db.commit()
+        logger.info(f"✅ Stored {len(raw_rows)} raw packets")
+        
+        # Run aggregation
+        agg_rows_count = 0
+        if AGGREGATOR_AVAILABLE and tmp_path:
+            try:
+                agg_df = aggregator.process_file(tmp_path)
+                agg_rows = []
+                
+                for _, row in agg_df.iterrows():
+                    agg_dict = {
+                        'src_ip': row.get('src_ip'),
+                        'window_start': pd.to_datetime(row.get('window_start')),
+                        'window_end': pd.to_datetime(row.get('window_end')),
+                        'window_size': int(row.get('window_size', 0))
+                    }
+                    
+                    # Add feature columns
+                    skip_cols = ['src_ip', 'window_start', 'window_end', 'window_size', 'label', 'variation']
+                    for col in row.index:
+                        if col not in skip_cols:
+                            # Check if column exists in AggregatedFeature
+                            if hasattr(AggregatedFeature, col):
+                                value = row[col]
+                                if pd.notna(value):
+                                    agg_dict[col] = float(value) if isinstance(value, (int, float, np.integer, np.floating)) else value
+                    
+                    agg_rows.append(AggregatedFeature(**agg_dict))
+                
+                db.bulk_save_objects(agg_rows)
+                db.commit()
+                agg_rows_count = len(agg_rows)
+                logger.info(f"✅ Stored {agg_rows_count} aggregated features (5s, 30s, 180s windows)")
+                
+            except Exception as e:
+                logger.error(f"Aggregation error: {e}")
+                db.rollback()
         
         return {
             "status": "success",
-            "packets_received": len(packets),
-            "message": "Packets stored and processed"
+            "raw_packets": len(raw_rows),
+            "aggregated_features": agg_rows_count,
+            "timestamp": datetime.utcnow().isoformat()
         }
-    except Exception as e:
-        logger.error(f"Error inserting packets: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
-@app.post("/predict")
-def predict_traffic(traffic: Traffic):
+
+@app.post("/ingest_packets")
+async def ingest_packets(
+    file: UploadFile = File(None),
+    request: Optional[dict] = None
+):
     """
-    Predict traffic label for aggregated flow.
-    This is the original endpoint for pre-aggregated data.
+    Receives network packets and stores in database.
+    
+    Supports TWO formats:
+    1. JSON body (direct API): POST with JSON array of packets
+    2. File upload: POST with JSON file containing {"raw_packets": [...]}
     """
-    if model is None:
-        raise HTTPException(status_code=503, detail="ML model not loaded")
+    from fastapi import Request
+    db = SessionLocal()
     
     try:
-        data = traffic.dict()
-        features = prepare_features(data)
-        pred_label = model.predict(features)[0]
-        data["predicted_label"] = pred_label
-
-        # Store in traffic_data table
-        ins = traffic_table.insert().values(**data)
-        with engine.begin() as conn:
-            conn.execute(ins)
-
-        return {"predicted_label": pred_label, "data": data}
+        packets_list = None
+        
+        # Method 1: File upload
+        if file and file.filename:
+            if not file.filename.endswith('.json'):
+                raise HTTPException(status_code=400, detail="Only JSON files are allowed")
+            
+            logger.info(f"📥 Ingesting file: {file.filename}")
+            content = await file.read()
+            data = json.loads(content)
+            
+            # Support both formats: {"raw_packets": [...]} or just [...]
+            if isinstance(data, dict) and 'raw_packets' in data:
+                packets_list = data['raw_packets']
+            elif isinstance(data, list):
+                packets_list = data
+            else:
+                raise HTTPException(status_code=400, detail="Invalid JSON structure")
+        
+        # Method 2: Direct JSON body (from sender.py)
+        # This will be handled by the alternative endpoint below
+        
+        if packets_list is None:
+            raise HTTPException(status_code=400, detail="No packets provided. Use file upload or /ingest endpoint.")
+        
+        result = await _process_packets(packets_list, db)
+        return result
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
     except Exception as e:
-        logger.error(f"Error in prediction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Ingest error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+    finally:
+        db.close()
 
-# ------------------- Web UI Endpoints -------------------
 
-@app.get("/", response_class=HTMLResponse)
-def last_10_traffic_page():
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-    <meta charset="UTF-8">
-    <title>Last 10 Traffic Records</title>
-    <style>
-      table { border-collapse: collapse; width: 100%; }
-      th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-      th { background-color: #f2f2f2; }
-    </style>
-    </head>
-    <body>
-    <h2>Last 10 Traffic Records</h2>
-    <table id="trafficTable">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Dest IP</th>
-          <th>Source MAC</th>
-          <th>Dest MAC</th>
-          <th>Packet Count</th>
-          <th>Packet/sec</th>
-          <th>Byte Count</th>
-          <th>Byte/sec</th>
-          <th>TCP Flags</th>
-          <th>Connection Attempts</th>
-          <th>Unique Ports</th>
-          <th>Protocol</th>
-          <th>Predicted Label</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-
-    <script>
-    async function fetchTraffic() {
-        const response = await fetch('/api/last10');
-        const data = await response.json();
-        console.log(data);
-        const tbody = document.querySelector('#trafficTable tbody');
-        tbody.innerHTML = '';
-        data.forEach(row => {
-            const tr = document.createElement('tr');
-            Object.values(row).forEach(val => {
-                const td = document.createElement('td');
-                td.textContent = val;
-                tr.appendChild(td);
-            });
-            tbody.appendChild(tr);
-        });
-    }
-    fetchTraffic();
-    setInterval(fetchTraffic, 5000);
-    </script>
-    </body>
-    </html>
+@app.post("/ingest")
+async def ingest_packets_json(packets: List[dict]):
     """
-    return html_content
-
-@app.get("/alltraffic_page", response_class=HTMLResponse)
-def all_traffic_page():
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-    <meta charset="UTF-8">
-    <title>All Traffic Records</title>
-    <style>
-      table { border-collapse: collapse; width: 100%; }
-      th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-      th { background-color: #f2f2f2; }
-    </style>
-    </head>
-    <body>
-    <h2>All Traffic Records</h2>
-    <table id="trafficTable">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Dest IP</th>
-          <th>Source MAC</th>
-          <th>Dest MAC</th>
-          <th>Packet Count</th>
-          <th>Packet/sec</th>
-          <th>Byte Count</th>
-          <th>Byte/sec</th>
-          <th>TCP Flags</th>
-          <th>Connection Attempts</th>
-          <th>Unique Ports</th>
-          <th>Protocol</th>
-          <th>Predicted Label</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-
-    <script>
-    async function fetchTraffic() {
-        const response = await fetch('/api/alltraffic');
-        const data = await response.json();
-        console.log(data);
-        const tbody = document.querySelector('#trafficTable tbody');
-        tbody.innerHTML = '';
-        data.forEach(row => {
-            const tr = document.createElement('tr');
-            Object.values(row).forEach(val => {
-                const td = document.createElement('td');
-                td.textContent = val;
-                tr.appendChild(td);
-            });
-            tbody.appendChild(tr);
-        });
-    }
-    fetchTraffic();
-    setInterval(fetchTraffic, 5000);
-    </script>
-    </body>
-    </html>
+    Alternative ingestion endpoint for direct JSON body.
+    This is what sender.py uses - sends array of packets directly.
+    
+    Usage: POST /ingest with JSON body: [{"timestamp": ..., "src_ip": ...}, ...]
     """
-    return html_content
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page():
-    """Serve the NetGuardian Pro analytics dashboard"""
-    import os
+    db = SessionLocal()
     
-    # Get the directory containing main.py
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    templates_dir = os.path.join(base_dir, "..", "templates")
-    
-    # Try to serve netguardian_tailwind.html first, fall back to dashboard.html
-    template_files = [
-        "netguardian_tailwind.html",
-        "dashboard.html"
-    ]
-    
-    for template_file in template_files:
-        template_path = os.path.join(templates_dir, template_file)
-        if os.path.exists(template_path):
-            with open(template_path, 'r', encoding='utf-8') as f:
-                return HTMLResponse(content=f.read())
-    
-    return HTMLResponse(content="<h1>Dashboard not found</h1>", status_code=404)
+    try:
+        logger.info(f"📥 Ingesting {len(packets)} packets via direct JSON")
+        result = await _process_packets(packets, db)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Ingest error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+    finally:
+        db.close()
 
-# ------------------- JSON API Endpoints -------------------
-@app.get("/api/last10")
-def api_last_10_features():
-    """Get last 10 aggregated feature records"""
-    conn = engine.connect()
-    sel = select(aggregated_features_table).order_by(aggregated_features_table.c.id.desc()).limit(10)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
-    return [dict(row) for row in result]
 
-@app.get("/api/alltraffic")
-def api_all_features():
-    """Get all aggregated feature records"""
-    conn = engine.connect()
-    sel = select(aggregated_features_table).order_by(aggregated_features_table.c.id.desc()).limit(100)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
-    return [dict(row) for row in result]
 
-@app.get("/api/raw_packets/last/{count}")
-def api_last_raw_packets(count: int = 100):
-    """Get last N raw packets"""
-    conn = engine.connect()
-    sel = select(raw_packets_table).order_by(raw_packets_table.c.id.desc()).limit(count)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
-    return [dict(row) for row in result]
+
+# ========== DASHBOARD API ENDPOINTS ==========
+
+@app.get("/")
+def root():
+    """Health check endpoint"""
+    return {
+        "status": "running",
+        "service": "NetGuardian Pro Dashboard",
+        "model_loaded": MODEL_LOADED,
+        "aggregator_available": AGGREGATOR_AVAILABLE,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
 
 @app.get("/health")
 def health_check():
     """Health check endpoint for monitoring"""
     return {
         "status": "healthy",
-        "model_loaded": model is not None,
+        "model_loaded": MODEL_LOADED,
+        "aggregator_available": AGGREGATOR_AVAILABLE,
         "timestamp": datetime.utcnow().isoformat()
     }
 
-# ------------------- NetGuardian Dashboard API Endpoints -------------------
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def serve_dashboard():
+    """Serve the HTML dashboard"""
+    if DASHBOARD_FILE.exists():
+        return HTMLResponse(content=DASHBOARD_FILE.read_text(encoding='utf-8'))
+    else:
+        return HTMLResponse(content=f"""
+        <html>
+            <head><title>NetGuardian Pro</title></head>
+            <body style="font-family: Arial; padding: 20px; background: #1a1a2e; color: white;">
+                <h1>🛡️ NetGuardian Pro</h1>
+                <p>Dashboard file not found at: {DASHBOARD_FILE}</p>
+                <h2>API Endpoints:</h2>
+                <ul>
+                    <li><a href="/docs" style="color: #4CAF50;">/docs</a> - API Documentation</li>
+                    <li><a href="/api/features" style="color: #4CAF50;">/api/features</a> - Traffic features</li>
+                    <li><a href="/api/alerts" style="color: #4CAF50;">/api/alerts</a> - Security alerts</li>
+                    <li><a href="/api/protocols" style="color: #4CAF50;">/api/protocols</a> - Protocol distribution</li>
+                </ul>
+            </body>
+        </html>
+        """)
+
 
 @app.get("/api/features")
 def api_features(window_size: int = 5):
-    """
-    Get aggregated features from aggregated_features table.
-    Falls back to raw packet calculation if no aggregated data.
-    """
-    conn = engine.connect()
-    
-    # Try to get from aggregated_features first
-    sel = select(aggregated_features_table).where(
-        aggregated_features_table.c.window_size == window_size
-    ).order_by(aggregated_features_table.c.id.desc()).limit(10)
-    result = conn.execute(sel).mappings().all()
-    
-    if result:
-        # Aggregate the most recent records
-        records = [dict(row) for row in result]
-        conn.close()
+    """Get aggregated features from aggregated_features table"""
+    db = SessionLocal()
+    try:
+        # Get from aggregated_features
+        result = db.query(AggregatedFeature).filter(
+            AggregatedFeature.window_size == window_size
+        ).order_by(desc(AggregatedFeature.id)).limit(10).all()
         
-        # Sum/average the features across all source IPs
-        features = {
-            'window_size': window_size,
-            'record_count': len(records),
-            'packet_count': sum(r.get('packet_count', 0) or 0 for r in records),
-            'byte_count': sum(r.get('byte_count', 0) or 0 for r in records),
-            'packet_rate_pps': sum(r.get('packet_rate_pps', 0) or 0 for r in records),
-            'byte_rate_bps': sum(r.get('byte_rate_bps', 0) or 0 for r in records),
-            'avg_packet_size': sum(r.get('avg_packet_size', 0) or 0 for r in records) / max(1, len(records)),
-            'tcp_count': sum(r.get('tcp_count', 0) or 0 for r in records),
-            'udp_count': sum(r.get('udp_count', 0) or 0 for r in records),
-            'icmp_count': sum(r.get('icmp_count', 0) or 0 for r in records),
-            'arp_count': sum(r.get('arp_count', 0) or 0 for r in records),
-            'unique_dst_ips': max(r.get('unique_dst_ips', 0) or 0 for r in records),
-            'unique_dst_ports': max(r.get('unique_dst_ports', 0) or 0 for r in records),
-            'tcp_syn_count': sum(r.get('tcp_syn_count', 0) or 0 for r in records),
-            'tcp_ack_count': sum(r.get('tcp_ack_count', 0) or 0 for r in records),
-            'syn_rate_pps': sum(r.get('syn_rate_pps', 0) or 0 for r in records),
-            'syn_to_synack_ratio': sum(r.get('syn_to_synack_ratio', 0) or 0 for r in records) / max(1, len(records)),
-            'dns_query_count': sum(r.get('dns_query_count', 0) or 0 for r in records),
-            'arp_request_count': sum(r.get('arp_request_count', 0) or 0 for r in records),
-            'arp_reply_count': sum(r.get('arp_reply_count', 0) or 0 for r in records),
-        }
+        if result:
+            records = []
+            for r in result:
+                rec = {
+                    'packet_count': r.packet_count or 0,
+                    'byte_count': r.byte_count or 0,
+                    'packet_rate_pps': r.packet_rate_pps or 0,
+                    'byte_rate_bps': r.byte_rate_bps or 0,
+                    'avg_packet_size': r.avg_packet_size or 0,
+                    'tcp_count': r.tcp_count or 0,
+                    'udp_count': r.udp_count or 0,
+                    'icmp_count': r.icmp_count or 0,
+                    'arp_count': r.arp_count or 0,
+                    'unique_dst_ips': r.unique_dst_ips or 0,
+                    'unique_dst_ports': r.unique_dst_ports or 0,
+                    'tcp_syn_count': r.tcp_syn_count or 0,
+                    'tcp_ack_count': r.tcp_ack_count or 0,
+                    'syn_rate_pps': r.syn_rate_pps or 0,
+                    'syn_to_synack_ratio': r.syn_to_synack_ratio or 0,
+                    'dns_query_count': r.dns_query_count or 0,
+                    'arp_request_count': r.arp_request_count or 0,
+                    'arp_reply_count': r.arp_reply_count or 0,
+                    'tcp_ports_hit': r.tcp_ports_hit or 0,
+                    'udp_ports_hit': r.udp_ports_hit or 0,
+                    'remote_conn_port_hits': r.remote_conn_port_hits or 0,
+                }
+                records.append(rec)
+            
+            # Aggregate across all records
+            features = {
+                'window_size': window_size,
+                'record_count': len(records),
+                'packet_count': sum(r['packet_count'] for r in records),
+                'byte_count': sum(r['byte_count'] for r in records),
+                'packet_rate_pps': sum(r['packet_rate_pps'] for r in records),
+                'byte_rate_bps': sum(r['byte_rate_bps'] for r in records),
+                'avg_packet_size': sum(r['avg_packet_size'] for r in records) / max(1, len(records)),
+                'tcp_count': sum(r['tcp_count'] for r in records),
+                'udp_count': sum(r['udp_count'] for r in records),
+                'icmp_count': sum(r['icmp_count'] for r in records),
+                'arp_count': sum(r['arp_count'] for r in records),
+                'unique_dst_ips': max(r['unique_dst_ips'] for r in records),
+                'unique_dst_ports': max(r['unique_dst_ports'] for r in records),
+                'tcp_syn_count': sum(r['tcp_syn_count'] for r in records),
+                'tcp_ack_count': sum(r['tcp_ack_count'] for r in records),
+                'syn_rate_pps': sum(r['syn_rate_pps'] for r in records),
+                'syn_to_synack_ratio': sum(r['syn_to_synack_ratio'] for r in records) / max(1, len(records)),
+                'dns_query_count': sum(r['dns_query_count'] for r in records),
+                'arp_request_count': sum(r['arp_request_count'] for r in records),
+                'arp_reply_count': sum(r['arp_reply_count'] for r in records),
+                'tcp_ports_hit': max(r['tcp_ports_hit'] for r in records),
+                'udp_ports_hit': max(r['udp_ports_hit'] for r in records),
+                'remote_conn_port_hits': sum(r['remote_conn_port_hits'] for r in records),
+            }
+            
+            # Add derived metrics
+            syn_only = features['tcp_syn_count'] - features['tcp_ack_count']
+            features['connection_failure_rate'] = min(1, syn_only / max(1, features['tcp_syn_count'])) if syn_only > 0 else 0
+            
+            return features
         
-        # Add derived metrics
-        features['connection_failure_rate'] = 0
-        syn_only = features['tcp_syn_count'] - (features.get('tcp_ack_count', 0) or 0)
-        if syn_only > 0:
-            features['connection_failure_rate'] = min(1, syn_only / features['tcp_syn_count'])
-        
-        return features
-    
-    conn.close()
-    
-    # Fallback: compute from raw packets (for backward compatibility)
-    return _compute_features_from_raw_packets()
+        # Fallback: compute from raw packets
+        return _compute_features_from_raw_packets(db)
+    finally:
+        db.close()
 
 
-def _compute_features_from_raw_packets():
+def _compute_features_from_raw_packets(db):
     """Fallback: compute features from raw packets"""
-    conn = engine.connect()
-    sel = select(raw_packets_table).order_by(raw_packets_table.c.id.desc()).limit(1000)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
+    result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
     
-    packets = [dict(row) for row in result]
-    
-    if not packets:
+    if not result:
         return {"error": "No data available"}
     
+    packets = []
+    for p in result:
+        packets.append({
+            'timestamp': p.timestamp,
+            'protocol': p.protocol,
+            'length': p.length,
+            'dst_ip': p.dst_ip,
+            'dst_port': p.dst_port,
+            'tcp_syn': p.tcp_syn,
+            'tcp_ack': p.tcp_ack,
+            'dns_query': p.dns_query,
+        })
+    
     # Calculate basic metrics
-    duration = 5  # default
+    duration = 5
     if len(packets) >= 2:
-        timestamps = [p.get('timestamp', 0) for p in packets if p.get('timestamp')]
+        timestamps = [p['timestamp'] for p in packets if p['timestamp']]
         if timestamps:
             duration = max(1, max(timestamps) - min(timestamps))
     
     total_packets = len(packets)
-    total_bytes = sum(p.get('length', 0) or 0 for p in packets)
+    total_bytes = sum(p['length'] or 0 for p in packets)
     
     return {
         'packet_count': total_packets,
         'byte_count': total_bytes,
         'packet_rate_pps': total_packets / duration,
         'byte_rate_bps': (total_bytes * 8) / duration,
-        'tcp_count': sum(1 for p in packets if p.get('protocol') == 'TCP'),
-        'udp_count': sum(1 for p in packets if p.get('protocol') == 'UDP'),
-        'icmp_count': sum(1 for p in packets if p.get('protocol') and 'ICMP' in str(p.get('protocol'))),
-        'arp_count': sum(1 for p in packets if p.get('protocol') == 'ARP'),
-        'unique_dst_ips': len(set(p.get('dst_ip') for p in packets if p.get('dst_ip'))),
-        'unique_dst_ports': len(set(p.get('dst_port') for p in packets if p.get('dst_port'))),
-        'tcp_syn_count': sum(1 for p in packets if p.get('tcp_syn')),
-        'tcp_ack_count': sum(1 for p in packets if p.get('tcp_ack')),
-        'dns_query_count': sum(1 for p in packets if p.get('dns_query')),
+        'tcp_count': sum(1 for p in packets if p['protocol'] == 'TCP'),
+        'udp_count': sum(1 for p in packets if p['protocol'] == 'UDP'),
+        'icmp_count': sum(1 for p in packets if p['protocol'] and 'ICMP' in str(p['protocol'])),
+        'arp_count': sum(1 for p in packets if p['protocol'] == 'ARP'),
+        'unique_dst_ips': len(set(p['dst_ip'] for p in packets if p['dst_ip'])),
+        'unique_dst_ports': len(set(p['dst_port'] for p in packets if p['dst_port'])),
+        'tcp_syn_count': sum(1 for p in packets if p['tcp_syn']),
+        'tcp_ack_count': sum(1 for p in packets if p['tcp_ack']),
+        'dns_query_count': sum(1 for p in packets if p['dns_query']),
         'source': 'raw_packets_fallback'
-    }
-
-
-@app.get("/api/alerts")
-def api_alerts(limit: int = 50, severity: str = None, resolved: bool = None):
-    """
-    Get detected security alerts.
-    
-    Args:
-        limit: Maximum number of alerts to return
-        severity: Filter by severity (LOW, MEDIUM, HIGH, CRITICAL)
-        resolved: Filter by resolution status
-    """
-    conn = engine.connect()
-    
-    # Build query with optional filters
-    query = select(detected_alerts_table)
-    
-    if severity:
-        query = query.where(detected_alerts_table.c.severity == severity.upper())
-    
-    if resolved is not None:
-        query = query.where(detected_alerts_table.c.resolved == resolved)
-    
-    query = query.order_by(detected_alerts_table.c.id.desc()).limit(limit)
-    result = conn.execute(query).mappings().all()
-    conn.close()
-    
-    alerts = []
-    for row in result:
-        alert = dict(row)
-        # Format datetime fields
-        if alert.get('detected_at'):
-            try:
-                alert['detected_at'] = alert['detected_at'].isoformat()
-            except:
-                pass
-        if alert.get('created_at'):
-            try:
-                alert['created_at'] = alert['created_at'].isoformat()
-            except:
-                pass
-        alerts.append(alert)
-    
-    return {
-        "alerts": alerts,
-        "total": len(alerts),
-        "filters": {
-            "severity": severity,
-            "resolved": resolved
-        }
-    }
-
-
-@app.post("/api/alerts/{alert_id}/resolve")
-def resolve_alert(alert_id: int):
-    """Mark an alert as resolved"""
-    from sqlalchemy import update
-    
-    with engine.begin() as conn:
-        stmt = update(detected_alerts_table).where(
-            detected_alerts_table.c.id == alert_id
-        ).values(resolved=True, resolved_at=datetime.utcnow())
-        result = conn.execute(stmt)
-    
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    
-    return {"status": "resolved", "alert_id": alert_id}
-
-
-@app.get("/api/alerts/summary")
-def api_alerts_summary():
-    """Get summary of alerts by type and severity"""
-    conn = engine.connect()
-    
-    # Get all recent alerts
-    sel = select(detected_alerts_table).order_by(detected_alerts_table.c.id.desc()).limit(1000)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
-    
-    alerts = [dict(row) for row in result]
-    
-    # Summarize
-    by_type = {}
-    by_severity = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
-    unresolved = 0
-    
-    for alert in alerts:
-        attack_type = alert.get('attack_type', 'Unknown')
-        by_type[attack_type] = by_type.get(attack_type, 0) + 1
-        
-        severity = alert.get('severity', 'UNKNOWN')
-        if severity in by_severity:
-            by_severity[severity] += 1
-        
-        if not alert.get('resolved'):
-            unresolved += 1
-    
-    return {
-        "total_alerts": len(alerts),
-        "unresolved": unresolved,
-        "by_attack_type": by_type,
-        "by_severity": by_severity
     }
 
 
 @app.get("/api/protocols")
 def api_protocols():
     """Get protocol distribution for charts"""
-    conn = engine.connect()
-    sel = select(raw_packets_table).order_by(raw_packets_table.c.id.desc()).limit(1000)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
-    
-    packets = [dict(row) for row in result]
-    
-    # Count protocols
-    protocol_counts = {}
-    for p in packets:
-        proto = p.get('protocol', 'OTHER') or 'OTHER'
-        protocol_counts[proto] = protocol_counts.get(proto, 0) + 1
-    
-    return {
-        "labels": list(protocol_counts.keys()),
-        "values": list(protocol_counts.values())
-    }
+    db = SessionLocal()
+    try:
+        result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
+        
+        protocol_counts = {}
+        for p in result:
+            proto = p.protocol or 'OTHER'
+            protocol_counts[proto] = protocol_counts.get(proto, 0) + 1
+        
+        return {
+            "labels": list(protocol_counts.keys()),
+            "values": list(protocol_counts.values())
+        }
+    finally:
+        db.close()
 
 
 @app.get("/api/top-sources")
 def api_top_sources(limit: int = 5):
     """Get top source IPs by packet count"""
-    conn = engine.connect()
-    sel = select(raw_packets_table).order_by(raw_packets_table.c.id.desc()).limit(1000)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
-    
-    packets = [dict(row) for row in result]
-    total = len(packets)
-    
-    # Count by source IP
-    ip_counts = {}
-    for p in packets:
-        ip = p.get('src_ip')
-        if ip:
-            ip_counts[ip] = ip_counts.get(ip, 0) + 1
-    
-    # Sort and get top N
-    sorted_ips = sorted(ip_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
-    
-    return [
-        {
-            "ip": ip,
-            "packet_count": count,
-            "percentage": round((count / total) * 100, 1) if total > 0 else 0
-        }
-        for ip, count in sorted_ips
-    ]
+    db = SessionLocal()
+    try:
+        result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
+        total = len(result)
+        
+        ip_counts = {}
+        for p in result:
+            if p.src_ip:
+                ip_counts[p.src_ip] = ip_counts.get(p.src_ip, 0) + 1
+        
+        sorted_ips = sorted(ip_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+        
+        return [
+            {
+                "ip": ip,
+                "packet_count": count,
+                "percentage": round((count / total) * 100, 1) if total > 0 else 0
+            }
+            for ip, count in sorted_ips
+        ]
+    finally:
+        db.close()
 
 
 @app.get("/api/top-destinations")
 def api_top_destinations(limit: int = 5):
     """Get top destination IPs by packet count"""
-    conn = engine.connect()
-    sel = select(raw_packets_table).order_by(raw_packets_table.c.id.desc()).limit(1000)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
-    
-    packets = [dict(row) for row in result]
-    total = len(packets)
-    
-    # Count by destination IP
-    ip_counts = {}
-    for p in packets:
-        ip = p.get('dst_ip')
-        if ip:
-            ip_counts[ip] = ip_counts.get(ip, 0) + 1
-    
-    # Sort and get top N
-    sorted_ips = sorted(ip_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
-    
-    return [
-        {
-            "ip": ip,
-            "packet_count": count,
-            "percentage": round((count / total) * 100, 1) if total > 0 else 0
-        }
-        for ip, count in sorted_ips
-    ]
+    db = SessionLocal()
+    try:
+        result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
+        total = len(result)
+        
+        ip_counts = {}
+        for p in result:
+            if p.dst_ip:
+                ip_counts[p.dst_ip] = ip_counts.get(p.dst_ip, 0) + 1
+        
+        sorted_ips = sorted(ip_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+        
+        return [
+            {
+                "ip": ip,
+                "packet_count": count,
+                "percentage": round((count / total) * 100, 1) if total > 0 else 0
+            }
+            for ip, count in sorted_ips
+        ]
+    finally:
+        db.close()
 
 
 @app.get("/api/top-ports")
 def api_top_ports(limit: int = 5):
     """Get top destination ports by packet count"""
-    conn = engine.connect()
-    sel = select(raw_packets_table).order_by(raw_packets_table.c.id.desc()).limit(1000)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
-    
-    packets = [dict(row) for row in result]
-    total = len(packets)
-    
-    # Common port to service mapping
-    port_services = {
-        20: "FTP-Data", 21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP",
-        53: "DNS", 80: "HTTP", 110: "POP3", 143: "IMAP", 443: "HTTPS",
-        445: "SMB", 993: "IMAPS", 995: "POP3S", 3306: "MySQL", 3389: "RDP",
-        5432: "PostgreSQL", 6379: "Redis", 8080: "HTTP-Alt", 8443: "HTTPS-Alt"
-    }
-    
-    # Count by destination port
-    port_counts = {}
-    for p in packets:
-        port = p.get('dst_port')
-        if port:
-            port_counts[port] = port_counts.get(port, 0) + 1
-    
-    # Sort and get top N
-    sorted_ports = sorted(port_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
-    
-    return [
-        {
-            "port": port,
-            "service": port_services.get(port, "Unknown"),
-            "packet_count": count,
-            "percentage": round((count / total) * 100, 1) if total > 0 else 0
+    db = SessionLocal()
+    try:
+        result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
+        total = len(result)
+        
+        port_services = {
+            20: "FTP-Data", 21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP",
+            53: "DNS", 80: "HTTP", 110: "POP3", 143: "IMAP", 443: "HTTPS",
+            445: "SMB", 993: "IMAPS", 995: "POP3S", 3306: "MySQL", 3389: "RDP",
+            5432: "PostgreSQL", 6379: "Redis", 8080: "HTTP-Alt", 8443: "HTTPS-Alt"
         }
-        for port, count in sorted_ports
-    ]
+        
+        port_counts = {}
+        for p in result:
+            if p.dst_port:
+                port_counts[p.dst_port] = port_counts.get(p.dst_port, 0) + 1
+        
+        sorted_ports = sorted(port_counts.items(), key=lambda x: x[1], reverse=True)[:limit]
+        
+        return [
+            {
+                "port": port,
+                "service": port_services.get(port, "Unknown"),
+                "packet_count": count,
+                "percentage": round((count / total) * 100, 1) if total > 0 else 0
+            }
+            for port, count in sorted_ports
+        ]
+    finally:
+        db.close()
 
 
 @app.get("/api/packets")
 def api_packets(page: int = 1, limit: int = 20):
     """Get paginated raw packets"""
-    conn = engine.connect()
-    
-    # Get total count
-    from sqlalchemy import func
-    count_sel = select(func.count()).select_from(raw_packets_table)
-    total = conn.execute(count_sel).scalar()
-    
-    # Get paginated results
-    offset = (page - 1) * limit
-    sel = select(raw_packets_table).order_by(raw_packets_table.c.id.desc()).offset(offset).limit(limit)
-    result = conn.execute(sel).mappings().all()
-    conn.close()
-    
-    packets = []
-    for row in result:
-        p = dict(row)
-        # Format timestamp
-        if p.get('timestamp'):
-            try:
-                ts = datetime.fromtimestamp(p['timestamp'])
-                p['timestamp'] = ts.strftime('%Y-%m-%d %H:%M:%S')
-            except:
-                pass
-        # Add flags field for display
-        p['flags'] = p.get('tcp_flags', '--')
-        packets.append(p)
-    
-    return {
-        "packets": packets,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "pages": (total + limit - 1) // limit if total else 0
-    }
+    db = SessionLocal()
+    try:
+        total = db.query(func.count(RawPacket.id)).scalar()
+        
+        offset = (page - 1) * limit
+        result = db.query(RawPacket).order_by(desc(RawPacket.id)).offset(offset).limit(limit).all()
+        
+        packets = []
+        for p in result:
+            pkt = {
+                'id': p.id,
+                'timestamp': datetime.fromtimestamp(p.timestamp).strftime('%Y-%m-%d %H:%M:%S') if p.timestamp else '--',
+                'src_ip': p.src_ip,
+                'dst_ip': p.dst_ip,
+                'protocol': p.protocol,
+                'src_port': p.src_port,
+                'dst_port': p.dst_port,
+                'length': p.length,
+                'flags': p.tcp_flags or '--'
+            }
+            packets.append(pkt)
+        
+        return {
+            "packets": packets,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "pages": (total + limit - 1) // limit if total else 0
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/alerts")
+def api_alerts(limit: int = 50, severity: str = None, resolved: bool = None):
+    """Get detected security alerts"""
+    db = SessionLocal()
+    try:
+        query = db.query(DetectedAlert)
+        
+        if severity:
+            query = query.filter(DetectedAlert.severity == severity.upper())
+        
+        if resolved is not None:
+            query = query.filter(DetectedAlert.resolved == resolved)
+        
+        result = query.order_by(desc(DetectedAlert.detected_at)).limit(limit).all()
+        
+        alerts = []
+        for a in result:
+            alert = {
+                "id": a.id,
+                "src_ip": a.src_ip,
+                "attack_type": a.attack_type,
+                "confidence": a.confidence,
+                "severity": a.severity,
+                "window_size": a.window_size,
+                "packet_count": a.packet_count,
+                "byte_count": a.byte_count,
+                "detected_at": a.detected_at.isoformat() if a.detected_at else None,
+                "resolved": a.resolved,
+                "details": a.details
+            }
+            alerts.append(alert)
+        
+        return {
+            "alerts": alerts,
+            "total": len(alerts),
+            "filters": {"severity": severity, "resolved": resolved}
+        }
+    finally:
+        db.close()
+
+
+@app.post("/api/alerts/{alert_id}/resolve")
+def resolve_alert(alert_id: int):
+    """Mark an alert as resolved"""
+    db = SessionLocal()
+    try:
+        alert = db.query(DetectedAlert).filter(DetectedAlert.id == alert_id).first()
+        if not alert:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        
+        alert.resolved = True
+        alert.resolved_at = datetime.utcnow()
+        db.commit()
+        
+        return {"status": "resolved", "alert_id": alert_id}
+    finally:
+        db.close()
+
+
+@app.get("/api/alerts/summary")
+def api_alerts_summary():
+    """Get summary of alerts by type and severity"""
+    db = SessionLocal()
+    try:
+        result = db.query(DetectedAlert).order_by(desc(DetectedAlert.id)).limit(1000).all()
+        
+        by_type = {}
+        by_severity = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+        unresolved = 0
+        
+        for alert in result:
+            attack_type = alert.attack_type or 'Unknown'
+            by_type[attack_type] = by_type.get(attack_type, 0) + 1
+            
+            severity = alert.severity or 'UNKNOWN'
+            if severity in by_severity:
+                by_severity[severity] += 1
+            
+            if not alert.resolved:
+                unresolved += 1
+        
+        return {
+            "total_alerts": len(result),
+            "unresolved": unresolved,
+            "by_attack_type": by_type,
+            "by_severity": by_severity
+        }
+    finally:
+        db.close()
 
 
 @app.get("/api/ml/predict")
 def api_ml_predict():
-    """
-    Get ML prediction based on recent traffic features.
-    Returns attack type, confidence, and threat level.
-    """
-    # Get features first
+    """Get ML prediction based on recent traffic features"""
     features = api_features()
     
     if "error" in features:
@@ -1009,68 +1019,38 @@ def api_ml_predict():
             "message": "No traffic data available"
         }
     
-    if model is None:
-        # Return a heuristic-based prediction if model not loaded
+    if not MODEL_LOADED:
+        # Heuristic-based prediction if model not loaded
         threat_indicators = 0
         
-        # Check for DDoS indicators
         if features.get('packet_rate_pps', 0) > 1000:
             threat_indicators += 2
         if features.get('syn_rate_pps', 0) > 100:
             threat_indicators += 2
         if features.get('connection_failure_rate', 0) > 0.5:
             threat_indicators += 1
-        
-        # Check for port scan indicators
         if features.get('unique_dst_ports', 0) > 50:
             threat_indicators += 2
         
-        # Determine threat level
         if threat_indicators >= 4:
-            return {
-                "attack_type": "Potential DDoS",
-                "confidence": 75.0,
-                "threat_level": "HIGH"
-            }
+            return {"attack_type": "Potential DDoS", "confidence": 75.0, "threat_level": "HIGH"}
         elif threat_indicators >= 2:
-            return {
-                "attack_type": "Suspicious Activity",
-                "confidence": 50.0,
-                "threat_level": "MEDIUM"
-            }
+            return {"attack_type": "Suspicious Activity", "confidence": 50.0, "threat_level": "MEDIUM"}
         else:
-            return {
-                "attack_type": "Normal",
-                "confidence": 90.0,
-                "threat_level": "NONE"
-            }
+            return {"attack_type": "Normal", "confidence": 90.0, "threat_level": "NONE"}
     
-    # If model is loaded, use it for prediction
     try:
-        # Prepare features for model
-        data = {
-            'packet_count': features.get('packet_count', 0),
-            'packet_per_sec': features.get('packet_rate_pps', 0),
-            'byte_count': features.get('byte_count', 0),
-            'byte_per_sec': features.get('byte_rate_bps', 0),
-            'tcp_flags': 'SYN' if features.get('tcp_syn_count', 0) > 0 else 'NONE',
-            'connection_attempts': features.get('tcp_syn_count', 0),
-            'unique_ports': features.get('unique_dst_ports', 0),
-            'protocol': 'TCP'
-        }
+        # Build feature vector for model
+        feature_dict = {col: features.get(col, 0) for col in feature_names}
+        feature_df = pd.DataFrame([feature_dict])
         
-        model_features = prepare_features(data)
-        prediction = model.predict(model_features)[0]
+        prediction = xgb_model.predict(feature_df)[0]
+        probabilities = xgb_model.predict_proba(feature_df)[0]
+        confidence = float(np.max(probabilities)) * 100
+        predicted_label = label_encoder.inverse_transform([prediction])[0]
         
-        # Get probability if available
-        confidence = 85.0
-        if hasattr(model, 'predict_proba'):
-            proba = model.predict_proba(model_features)[0]
-            confidence = max(proba) * 100
-        
-        # Determine threat level
         threat_level = "NONE"
-        if prediction.lower() != "normal":
+        if predicted_label.lower() != "normal":
             if confidence > 80:
                 threat_level = "HIGH"
             elif confidence > 60:
@@ -1079,7 +1059,7 @@ def api_ml_predict():
                 threat_level = "LOW"
         
         return {
-            "attack_type": prediction,
+            "attack_type": predicted_label,
             "confidence": round(confidence, 1),
             "threat_level": threat_level
         }
@@ -1093,12 +1073,48 @@ def api_ml_predict():
         }
 
 
-# ------------------- Serve Static Files -------------------
-from fastapi.staticfiles import StaticFiles
-import os
+@app.get("/stats")
+def get_stats():
+    """Get database statistics"""
+    db = SessionLocal()
+    try:
+        raw_count = db.query(func.count(RawPacket.id)).scalar()
+        agg_count = db.query(func.count(AggregatedFeature.id)).scalar()
+        alert_count = db.query(func.count(DetectedAlert.id)).scalar()
+        unresolved_alerts = db.query(func.count(DetectedAlert.id)).filter(DetectedAlert.resolved == False).scalar()
+        predicted_count = db.query(func.count(AggregatedFeature.id)).filter(
+            AggregatedFeature.predicted_label != None
+        ).scalar()
+        
+        return {
+            "raw_packets": raw_count,
+            "aggregated_features": agg_count,
+            "predicted_features": predicted_count,
+            "pending_predictions": agg_count - predicted_count,
+            "total_alerts": alert_count,
+            "unresolved_alerts": unresolved_alerts,
+            "model_loaded": MODEL_LOADED,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    finally:
+        db.close()
 
-# Mount static files directory
-static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+# ========== STARTUP ==========
+@app.on_event("startup")
+def startup_event():
+    """Start background prediction task"""
+    if MODEL_LOADED:
+        prediction_thread = threading.Thread(target=run_predictions, daemon=True)
+        prediction_thread.start()
+        logger.info("🔄 Started background prediction loop")
+    else:
+        logger.warning("⚠️ ML model not loaded - predictions disabled")
+
+
+# ========== MAIN ==========
+if __name__ == "__main__":
+    logger.info("🌐 Starting NetGuardian Pro Production Server...")
+    logger.info(f"   Dashboard: http://127.0.0.1:8000/dashboard")
+    logger.info(f"   API Docs: http://127.0.0.1:8000/docs")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

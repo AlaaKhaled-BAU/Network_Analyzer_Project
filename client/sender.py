@@ -4,7 +4,7 @@ Runs as separate process from sniffer.py
 """
 
 import os
-import csv
+# Removed: csv import (now using JSON only)
 import json
 import requests
 import logging
@@ -32,47 +32,29 @@ PENDING_DIR.mkdir(parents=True, exist_ok=True)
 FAILED_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-# Server configuration
-SERVER_URL = "http://26.178.118.134:8000/ingest_packets"
+# Server configuration - use /ingest for direct JSON body
+SERVER_URL = "http://26.178.118.134:8000/ingest"
 POLL_INTERVAL = 1  # Check for new files every 1 second
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds
-BATCH_SIZE = 500  # Upload up to 500 packets per request
+BATCH_SIZE = 1000  # Optimal for PostgreSQL bulk inserts
 
 # --- Helper Functions ---
-def read_csv_file(csv_path: Path) -> List[Dict]:
-    """Read CSV file and return list of packet dictionaries"""
+def read_json_file(json_path: Path) -> List[Dict]:
+    """Read JSON file and return list of packet dictionaries"""
     try:
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            packets = list(reader)
+        with open(json_path, 'r', encoding='utf-8') as f:
+            packets = json.load(f)
         
-        # Convert string booleans and numbers to proper types
-        for packet in packets:
-            for key, value in packet.items():
-                if value == 'True':
-                    packet[key] = True
-                elif value == 'False':
-                    packet[key] = False
-                elif value == 'None' or value == '':
-                    packet[key] = None
-                elif key in ['length', 'src_port', 'dst_port', 'seq', 'ack', 
-                            'icmp_type', 'icmp_code', 'arp_op', 'dns_qtype', 
-                            'dns_answer_count', 'dns_answer_size']:
-                    try:
-                        packet[key] = int(value) if value else None
-                    except:
-                        pass
-                elif key == 'timestamp':
-                    try:
-                        packet[key] = float(value)
-                    except:
-                        pass
+        # Ensure it's a list
+        if not isinstance(packets, list):
+            logger.error(f"JSON file {json_path} does not contain a list")
+            return []
         
         return packets
     
     except Exception as e:
-        logger.error(f"Error reading CSV {csv_path}: {e}")
+        logger.error(f"Error reading JSON {json_path}: {e}")
         return []
 
 def upload_packets(packets: List[Dict], retry_count: int = 0) -> bool:
@@ -115,23 +97,23 @@ def upload_with_retry(packets: List[Dict]) -> bool:
     
     return False
 
-def process_csv_file(csv_path: Path) -> bool:
-    """Process a single CSV file"""
-    ready_marker = csv_path.with_suffix('.csv.ready')
+def process_json_file(json_path: Path) -> bool:
+    """Process a single JSON file"""
+    ready_marker = json_path.with_suffix('.json.ready')
     
     # Check if file has .ready marker
     if not ready_marker.exists():
         return False
     
-    logger.info(f"Processing {csv_path.name}...")
+    logger.info(f"Processing {json_path.name}...")
     
-    # Read packets from CSV
-    packets = read_csv_file(csv_path)
+    # Read packets from JSON
+    packets = read_json_file(json_path)
     
     if not packets:
-        logger.warning(f"No packets in {csv_path.name}, skipping")
+        logger.warning(f"No packets in {json_path.name}, skipping")
         # Remove empty file
-        csv_path.unlink()
+        json_path.unlink()
         ready_marker.unlink()
         return True
     
@@ -149,22 +131,22 @@ def process_csv_file(csv_path: Path) -> bool:
     
     if success:
         # Move to processed directory
-        processed_path = PROCESSED_DIR / csv_path.name
-        csv_path.rename(processed_path)
+        processed_path = PROCESSED_DIR / json_path.name
+        json_path.rename(processed_path)
         ready_marker.unlink()
-        logger.info(f"✓ {csv_path.name} processed successfully ({total_packets} packets)")
+        logger.info(f"✓ {json_path.name} processed successfully ({total_packets} packets)")
     else:
         # Move to failed directory
-        failed_path = FAILED_DIR / csv_path.name
-        csv_path.rename(failed_path)
+        failed_path = FAILED_DIR / json_path.name
+        json_path.rename(failed_path)
         ready_marker.unlink()
-        logger.warning(f"✗ {csv_path.name} moved to failed_uploads/")
+        logger.warning(f"✗ {json_path.name} moved to failed_uploads/")
     
     return success
 
 def retry_failed_uploads():
     """Retry previously failed uploads"""
-    failed_files = list(FAILED_DIR.glob('packets_*.csv'))
+    failed_files = list(FAILED_DIR.glob('packets_*.json'))
     
     if not failed_files:
         return
@@ -175,7 +157,7 @@ def retry_failed_uploads():
         logger.info(f"Retrying {failed_file.name}...")
         
         # Read and upload
-        packets = read_csv_file(failed_file)
+        packets = read_json_file(failed_file)
         if packets and upload_with_retry(packets):
             # Move to processed
             processed_path = PROCESSED_DIR / failed_file.name
@@ -200,18 +182,18 @@ def monitor_and_upload():
     
     while True:
         try:
-            # Find CSV files with .ready markers
-            csv_files = []
+            # Find JSON files with .ready markers
+            json_files = []
             for ready_file in PENDING_DIR.glob('*.ready'):
-                csv_file = ready_file.with_suffix('')  # Remove .ready extension
-                if csv_file.exists() and csv_file.suffix == '.csv':
-                    csv_files.append(csv_file)
+                json_file = ready_file.with_suffix('')  # Remove .ready extension
+                if json_file.exists() and json_file.suffix == '.json':
+                    json_files.append(json_file)
             
             # Process files in chronological order
-            csv_files.sort()
+            json_files.sort()
             
-            for csv_file in csv_files:
-                process_csv_file(csv_file)
+            for json_file in json_files:
+                process_json_file(json_file)
             
             # Periodically retry failed uploads (every 5 minutes)
             if (datetime.now() - last_retry_check).total_seconds() > 300:

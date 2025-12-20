@@ -1,4 +1,4 @@
-import csv
+# JSON-only sniffer - no CSV
 import json
 import ipaddress
 from scapy.all import sniff, get_if_list, IP, IPv6, TCP, UDP, ICMP, ICMPv6EchoRequest, ARP, DNS, DNSQR, DNSRR, Raw
@@ -26,17 +26,17 @@ os.makedirs(PENDING_DIR, exist_ok=True)
 logger.info(f"Logs folder created at {LOGS_DIR}")
 
 # --- Configuration ---
-SAVE_INTERVAL = 5  # Save CSV every 5 seconds for real-time detection
+SAVE_INTERVAL = 5  # Save JSON every 5 seconds for real-time detection
 
 # --- File Generation Functions ---
-def generate_csv_filename():
-    """Generate timestamped CSV filename"""
+def generate_json_filename():
+    """Generate timestamped JSON filename"""
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    return os.path.join(PENDING_DIR, f'packets_{timestamp}.csv')
+    return os.path.join(PENDING_DIR, f'packets_{timestamp}.json')
 
-def save_to_csv_atomic(packets, base_filename):
+def save_to_json_atomic(packets, base_filename):
     """
-    Save packets to CSV file atomically with .ready marker
+    Save packets to JSON file atomically with .ready marker
     Uses temp file + rename for atomic operation
     """
     if not packets:
@@ -48,11 +48,9 @@ def save_to_csv_atomic(packets, base_filename):
     ready_marker = base_filename + '.ready'
     
     try:
-        # Write to temp file
-        with open(temp_file, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=packets[0].keys())
-            writer.writeheader()
-            writer.writerows(packets)
+        # Write to temp file as JSON array
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(packets, f, indent=None)  # Compact JSON
         
         # Atomic rename (this is instantaneous)
         os.replace(temp_file, base_filename)
@@ -63,7 +61,7 @@ def save_to_csv_atomic(packets, base_filename):
         logger.info(f"✓ Saved {len(packets)} packets to {os.path.basename(base_filename)}")
         
     except Exception as e:
-        logger.error(f"Failed to save CSV: {e}")
+        logger.error(f"Failed to save JSON: {e}")
         # Clean up temp file if it exists
         if os.path.exists(temp_file):
             os.remove(temp_file)
@@ -314,10 +312,10 @@ class PacketBuffer:
             self.last_save_time = datetime.now()
         
         # Save in background thread
-        csv_file = generate_csv_filename()
+        json_file = generate_json_filename()
         save_thread = threading.Thread(
-            target=save_to_csv_atomic,
-            args=(packets_to_save, csv_file),
+            target=save_to_json_atomic,
+            args=(packets_to_save, json_file),
             daemon=True
         )
         save_thread.start()
