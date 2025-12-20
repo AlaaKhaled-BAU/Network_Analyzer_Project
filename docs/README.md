@@ -9,7 +9,7 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 ### **Client-Side Components**
 
 1. **[sniffer_explained.md](sniffer_explained.md)** - Packet Capture Module
-   - **What it does:** Captures network packets and saves to CSV files
+   - **What it does:** Captures network packets and saves to JSON files
    - **Read this if you want to:**
      - Understand how packet capture works
      - Change capture intervals or filters
@@ -17,7 +17,7 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
      - Optimize memory usage
 
 2. **[sender_explained.md](sender_explained.md)** - File Upload Manager
-   - **What it does:** Monitors CSV files and uploads to server
+   - **What it does:** Monitors JSON files and uploads to server
    - **Read this if you want to:**
      - Understand the file monitoring system
      - Configure upload retry logic
@@ -121,18 +121,18 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 - **Language:** Python
 - **Dependencies:** Scapy, threading
 - **Requires:** Admin/root privileges
-- **Output:** CSV files in `logs/pending_upload/`
+- **Output:** JSON files in `logs/pending_upload/`
 - **Key Features:**
   - Multi-interface capture
   - 30+ packet features
   - Atomic file writes
-  - Periodic saves (30s)
+  - Periodic saves (5s)
 
 ### **sender.py** (Lines: 260)
 - **Language:** Python
 - **Dependencies:** requests
 - **Requires:** Network access to server
-- **Input:** CSV files from `logs/pending_upload/`
+- **Input:** JSON files from `logs/pending_upload/`
 - **Key Features:**
   - Continuous file monitoring
   - HTTP uploads with retry
@@ -182,9 +182,9 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 
 | Setting | File | Line | Default | Purpose |
 |---------|------|------|---------|---------|
-| Save interval | sniffer.py | 31 | 30s | How often to save CSV |
-| Server URL | sender.py | 29 | `http://...` | Upload destination |
-| Poll interval | sender.py | 30 | 2s | File check frequency |
+| Save interval | sniffer.py | 28 | 5s | How often to save JSON |
+| Server URL | sender.py | 36 | `http://...` | Upload destination |
+| Poll interval | sender.py | 37 | 1s | File check frequency |
 | Database URL | main.py | 21 | `postgresql://...` | Database connection |
 | Aggregation interval | aggregator.py | 138 | 30s | Flow processing frequency |
 
@@ -192,7 +192,7 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 
 | Directory | Purpose | Created by | Used by |
 |-----------|---------|------------|---------|
-| `logs/pending_upload/` | CSV files waiting upload | sniffer.py | sender.py |
+| `logs/pending_upload/` | JSON files waiting upload | sniffer.py | sender.py |
 | `logs/processed/` | Successfully uploaded | sender.py | - |
 | `logs/failed_uploads/` | Failed uploads | sender.py | sender.py (retry) |
 
@@ -221,9 +221,9 @@ Network Traffic
     ↓
 [sniffer.py] → Capture & extract features
     ↓
-CSV files (logs/pending_upload/)
+JSON files (logs/pending_upload/)
     ↓
-[sender.py] → Monitor & upload
+[sender.py] → Monitor & upload to /ingest
     ↓
 HTTP POST
     ↓

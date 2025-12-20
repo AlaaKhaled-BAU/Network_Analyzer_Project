@@ -3,7 +3,7 @@
 ## 📋 Overview
 
 **File:** `client/sniffer.py`  
-**Purpose:** Capture network packets and save them to CSV files for later upload  
+**Purpose:** Capture network packets and save them to JSON files for later upload  
 **Role:** Producer in the producer-consumer architecture  
 **Runs as:** Standalone process (requires admin/root privileges)
 
@@ -16,7 +16,7 @@
 1. **Captures** packets from all network interfaces using Scapy
 2. **Extracts** 30+ features from each packet (IPs, ports, protocols, etc.)
 3. **Buffers** packets in memory
-4. **Saves** to CSV files every 30 seconds using atomic writes
+4. **Saves** to JSON files every 5 seconds using atomic writes
 5. **Signals** completion with `.ready` marker files
 
 ---
@@ -32,12 +32,12 @@ packet_summary() → Extract features
        ↓
 PacketBuffer → In-memory buffer
        ↓
-(Every 30 seconds)
+(Every 5 seconds)
        ↓
-save_to_csv_atomic() → Write to disk
+save_to_json_atomic() → Write to disk
        ↓
-logs/pending_upload/packets_TIMESTAMP.csv
-logs/pending_upload/packets_TIMESTAMP.csv.ready
+logs/pending_upload/packets_TIMESTAMP.json
+logs/pending_upload/packets_TIMESTAMP.json.ready
 
 **Function:** `packet_summary(pkt, interface)`
 
@@ -106,9 +106,9 @@ if IP in pkt:                    # Check if IPv4 packet
 
 ### **3. Atomic File Writing (Lines 38-63)**
 
-**Function:** `save_to_csv_atomic(packets, base_filename)`
+**Function:** `save_to_json_atomic(packets, base_filename)`
 
-**Purpose:** Save packets to CSV without risk of corruption
+**Purpose:** Save packets to JSON without risk of corruption
 
 **The Problem:**
 If you write directly to a CSV file, another process might read it while it's incomplete:
@@ -124,7 +124,7 @@ with open('packets.csv', 'w') as f:
 # Step 1: Write to temporary file
 temp_file = base_filename + '.tmp'
 with open(temp_file, 'w') as f:
-    writer.writerows(packets)  # Write complete data
+    json.dump(packets, f)  # Write complete JSON data
 
 # Step 2: Atomic rename (instant, no partial states)
 os.replace(temp_file, base_filename)  # This is atomic!
@@ -300,7 +300,7 @@ Each interface gets its own capture thread, all writing to the same buffer.
 
 ### Change Save Interval
 ```python
-SAVE_INTERVAL = 60  # Save every 60 seconds instead of 30
+SAVE_INTERVAL = 10  # Save every 10 seconds instead of 5
 ```
 **Trade-off:** Less frequent I/O, but higher memory usage
 
@@ -467,13 +467,14 @@ timestamp,protocol,src_port,tcp_flags
 
 ## 📁 Output File Format
 
-**File:** `logs/pending_upload/packets_20251129_220000.csv`
+**File:** `logs/pending_upload/packets_20251129_220000.json`
 
 **Structure:**
-```csv
-timestamp,interface,src_ip,dst_ip,protocol,length,src_port,dst_port,tcp_flags,...
-1701234567.123,Wi-Fi,192.168.1.100,8.8.8.8,TCP,60,54321,443,SYN,...
-1701234567.456,Wi-Fi,8.8.8.8,192.168.1.100,TCP,60,443,54321,SYN;ACK,...
+```json
+[
+  {"timestamp": 1701234567.123, "interface": "Wi-Fi", "src_ip": "192.168.1.100", "dst_ip": "8.8.8.8", "protocol": "TCP", ...},
+  {"timestamp": 1701234567.456, ...}
+]
 ```
 
 **Columns:** 30+ fields (see packet_summary documentation above)

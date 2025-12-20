@@ -3,7 +3,7 @@
 ## 📋 Overview
 
 **File:** `client/sender.py`  
-**Purpose:** Monitor for new CSV files and upload them to the server  
+**Purpose:** Monitor for new JSON files and upload them to the server  
 **Role:** Consumer in the producer-consumer architecture  
 **Runs as:** Standalone process (does NOT require admin privileges)
 
@@ -13,10 +13,10 @@
 
 `sender.py` is responsible for file monitoring and server communication:
 
-1. **Monitors** `logs/pending_upload/` folder for new files every 2 seconds
-2. **Detects** CSV files with `.ready` markers (signals file is complete)
-3. **Reads** CSV and converts to JSON format
-4. **Uploads** to server via HTTP POST
+1. **Monitors** `logs/pending_upload/` folder for new files every 1 second
+2. **Detects** JSON files with `.ready` markers (signals file is complete)
+3. **Reads** JSON file directly (no conversion needed)
+4. **Uploads** to server via HTTP POST to `/ingest`
 5. **Retries** failed uploads 3 times with exponential backoff
 6. **Manages** files:
    - Success → Move to `logs/processed/`
@@ -29,14 +29,14 @@
 
 ```
 logs/pending_upload/
-├── packets_20251129_220000.csv       ← Sniffer writes here
-└── packets_20251129_220000.csv.ready ← Ready marker
+├── packets_20251129_220000.json       ← Sniffer writes here
+└── packets_20251129_220000.json.ready ← Ready marker
        ↓
     (sender.py detects)
        ↓
-   Read CSV → Convert to JSON
+   Read JSON file directly
        ↓
-   HTTP POST to server
+   HTTP POST to /ingest
        ↓
   ┌─────────────┬──────────────┐
   ↓ Success     ↓ Failure      ↓
@@ -57,11 +57,11 @@ FAILED_DIR = LOGS_DIR / 'failed_uploads'    # Failed uploads
 PROCESSED_DIR = LOGS_DIR / 'processed'      # Successful uploads
 
 # Server configuration
-SERVER_URL = "http://26.178.118.134:8000/ingest_packets"
-POLL_INTERVAL = 2   # Check for new files every 2 seconds
+SERVER_URL = "http://26.178.118.134:8000/ingest"
+POLL_INTERVAL = 1   # Check for new files every 1 second
 MAX_RETRIES = 3     # Retry failed uploads 3 times
 RETRY_DELAY = 5     # Wait 5 seconds before retry
-BATCH_SIZE = 500    # Upload 500 packets per HTTP request
+BATCH_SIZE = 1000   # Upload 1000 packets per HTTP request (optimal for PostgreSQL)
 ```
 
 **What you can change:**
@@ -76,17 +76,17 @@ BATCH_SIZE = 500    # Upload 500 packets per HTTP request
 
 ---
 
-### **2. CSV Reading & Type Conversion (Lines 37-74)**
+**Function:** `read_json_file(json_path)`
 
-**Function:** `read_csv_file(csv_path)`
+**Purpose:** Read JSON file and return list of packet dictionaries
 
-**Purpose:** Read CSV and convert string values to proper Python types
-
-**The Problem:**
-CSV files store everything as strings:
-```csv
-timestamp,tcp_syn,src_port
-"1234567.123","True","80"
+**The Advantage (vs old CSV):**
+JSON files preserve types natively - no string conversion needed:
+```python
+def read_json_file(json_path):
+    with open(json_path, 'r', encoding='utf-8') as f:
+        packets = json.load(f)  # Already proper types!
+    return packets
 ```
 
 **The Solution:**
