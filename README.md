@@ -192,5 +192,5 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for more details.
 
 ## 📝 License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).
 
