@@ -1,6 +1,6 @@
 # JSON-only sniffer - no CSV
 import json
-import ipaddress
+import argparse
 from scapy.all import sniff, get_if_list, IP, IPv6, TCP, UDP, ICMP, ICMPv6EchoRequest, ARP, DNS, DNSQR, DNSRR, Raw
 import os
 from datetime import datetime, timedelta
@@ -9,6 +9,8 @@ import signal
 import threading
 import logging
 import time
+import sys
+import importlib.util
 
 # --- Configure Logging ---
 logging.basicConfig(
@@ -27,6 +29,7 @@ logger.info(f"Logs folder created at {LOGS_DIR}")
 
 # --- Configuration ---
 SAVE_INTERVAL = 5  # Save JSON every 5 seconds for real-time detection
+MAX_BUFFER_SIZE = 50000  # Max packets before forced save (prevents OOM)
 
 # --- File Generation Functions ---
 def generate_json_filename():
@@ -288,30 +291,63 @@ signal.signal(signal.SIGINT, signal_handler)
 
 # --- Packet Buffer Manager ---
 class PacketBuffer:
-    """Manages packet buffering and periodic saves"""
-    def __init__(self, save_interval):
+    """
+    Thread-safe packet buffer using queue.Queue for multi-producer efficiency.
+    
+    Uses Python's queue.Queue which is optimized for multi-threaded scenarios
+    where multiple producers (NIC threads) add packets concurrently.
+    """
+    def __init__(self, save_interval, max_buffer_size=MAX_BUFFER_SIZE):
+        import queue as queue_module
+        self.queue_module = queue_module  # Store for later use
+        
         self.save_interval = save_interval
-        self.buffer = []
+        self.max_buffer_size = max_buffer_size
+        
+        # Use queue.Queue for thread-safe multi-producer operations
+        self.packet_queue = queue_module.Queue()
+        
         self.last_save_time = datetime.now()
-        self.lock = threading.Lock()
+        self.force_save_count = 0
+        self._running = True
+        
+        # Lock for force-save check to prevent multiple threads triggering save simultaneously
+        self._save_lock = threading.Lock()
+        
         self.start_save_timer()
     
     def add_packet(self, packet):
-        """Add packet to buffer"""
-        with self.lock:
-            self.buffer.append(packet)
-    
-    def save_buffer(self):
-        """Save current buffer to file"""
-        with self.lock:
-            if not self.buffer:
-                return
-            
-            packets_to_save = self.buffer.copy()
-            self.buffer.clear()
-            self.last_save_time = datetime.now()
+        """Add packet to queue - thread-safe, no explicit locking needed"""
+        self.packet_queue.put(packet)  # Thread-safe put
         
-        # Save in background thread
+        # Check if queue is getting full - trigger early save (with lock to prevent race)
+        current_size = self.packet_queue.qsize()
+        if current_size >= self.max_buffer_size:
+            # Use lock to ensure only one thread triggers the save
+            with self._save_lock:
+                # Double-check after acquiring lock (another thread may have already saved)
+                if self.packet_queue.qsize() >= self.max_buffer_size:
+                    self.force_save_count += 1
+                    logger.warning(f"Buffer full (~{self.max_buffer_size} packets), forcing save #{self.force_save_count}")
+                    self._save_buffer_internal()
+    
+    def _save_buffer_internal(self):
+        """Internal save method - drains queue and saves to file"""
+        # Quickly drain the queue
+        packets_to_save = []
+        try:
+            while True:
+                packet = self.packet_queue.get_nowait()
+                packets_to_save.append(packet)
+        except self.queue_module.Empty:
+            pass  # Queue is empty - expected
+        
+        if not packets_to_save:
+            return
+        
+        self.last_save_time = datetime.now()
+        
+        # Save in background thread to not block producers
         json_file = generate_json_filename()
         save_thread = threading.Thread(
             target=save_to_json_atomic,
@@ -321,15 +357,23 @@ class PacketBuffer:
         save_thread.start()
     
     def periodic_save(self):
-        """Periodically save buffer to CSV"""
-        while running:
+        """Periodically save queue contents to file"""
+        while self._running and running:
             time.sleep(1)
             
             time_since_last_save = (datetime.now() - self.last_save_time).total_seconds()
             
-            if self.buffer and time_since_last_save >= self.save_interval:
-                logger.info(f"Auto-saving {len(self.buffer)} packets")
-                self.save_buffer()
+            # Save if interval passed and queue has packets
+            if not self.packet_queue.empty() and time_since_last_save >= self.save_interval:
+                queue_size = self.packet_queue.qsize()
+                logger.info(f"Auto-saving ~{queue_size} packets")
+                with self._save_lock:
+                    self._save_buffer_internal()
+    
+    def save_buffer(self):
+        """Public method to save buffer - thread-safe"""
+        with self._save_lock:
+            self._save_buffer_internal()
     
     def start_save_timer(self):
         """Start background thread for periodic saving"""
@@ -348,21 +392,213 @@ def sniff_interface(interface, buffer):
     while running:
         sniff(prn=handle_packet, store=0, iface=interface, timeout=1)
 
-def main():
-    logger.info("Starting packet sniffer (storage-only mode)...")
-    logger.info(f"Files will be saved to: {PENDING_DIR}")
-    logger.info(f"Save interval: {SAVE_INTERVAL} seconds")
+def display_interfaces():
+    """Display all available network interfaces with numbers and friendly names"""
+    from scapy.all import IFACES
     
-    # Create packet buffer
-    packet_buffer = PacketBuffer(SAVE_INTERVAL)
+    interfaces = []
+    interface_info = []
     
-    # Get network interfaces
-    interfaces = get_if_list()
-    logger.info(f"Interfaces detected: {interfaces}")
+    # Build interface list with friendly names
+    for raw_name, iface in IFACES.items():
+        try:
+            # Get IP address if available
+            ip = getattr(iface, 'ip', None) or ''
+            
+            # Get friendly name (description)
+            friendly = getattr(iface, 'description', '') or getattr(iface, 'name', '') or raw_name
+            
+            # Skip if no friendly name and no IP
+            if not friendly and not ip:
+                continue
+                
+            interfaces.append(raw_name)
+            interface_info.append({
+                'raw': raw_name,
+                'friendly': friendly,
+                'ip': ip
+            })
+        except:
+            # Fallback: add raw name
+            interfaces.append(raw_name)
+            interface_info.append({
+                'raw': raw_name,
+                'friendly': raw_name,
+                'ip': ''
+            })
+    
+    # Also add any from get_if_list not in IFACES
+    raw_list = get_if_list()
+    for raw_name in raw_list:
+        if raw_name not in interfaces:
+            interfaces.append(raw_name)
+            interface_info.append({
+                'raw': raw_name,
+                'friendly': raw_name.split('{')[0].strip('\\').replace('Device\\NPF_', ''),
+                'ip': ''
+            })
+    
+    print("\n" + "=" * 70)
+    print("AVAILABLE NETWORK INTERFACES")
+    print("=" * 70)
+    for i, info in enumerate(interface_info, 1):
+        ip_str = f" ({info['ip']})" if info['ip'] else ""
+        print(f"  {i:2}. {info['friendly']}{ip_str}")
+    print("-" * 70)
+    print(f"   0. ALL interfaces ({len(interfaces)} total)")
+    print("=" * 70 + "\n")
+    
+    return interfaces
 
-    # Start a thread for each interface
+def parse_interface_selection(selection: str, interfaces: list) -> list:
+    """
+    Parse interface selection string.
+    
+    Args:
+        selection: Can be '0' or 'all' for all interfaces, 
+                   or comma-separated numbers like '1,2,4'
+        interfaces: List of available interface names
+    
+    Returns:
+        List of selected interface names
+    """
+    selection = selection.strip().lower()
+    
+    # All interfaces
+    if selection in ('0', 'all'):
+        return interfaces
+    
+    # Parse comma-separated numbers
+    try:
+        indices = [int(x.strip()) for x in selection.split(',')]
+        selected = []
+        for idx in indices:
+            if 1 <= idx <= len(interfaces):
+                selected.append(interfaces[idx - 1])
+            else:
+                logger.warning(f"Invalid interface number: {idx} (valid: 1-{len(interfaces)})")
+        return selected
+    except ValueError:
+        logger.error(f"Invalid selection format: {selection}")
+        return []
+
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='Network packet sniffer with interface selection',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python sniffer.py                    # Interactive mode - prompts for interface
+  python sniffer.py -i all             # Sniff on ALL interfaces
+  python sniffer.py -i 0               # Same as 'all'
+  python sniffer.py -i 1               # Sniff only on interface #1
+  python sniffer.py -i 1,2,4           # Sniff on interfaces #1, #2, and #4
+  python sniffer.py --list             # Just list interfaces and exit
+  python sniffer.py -i 1 --send        # Sniff AND upload to server
+        """
+    )
+    parser.add_argument(
+        '-i', '--interfaces',
+        type=str,
+        default=None,
+        help="Interface selection: 'all'/0 for all, or comma-separated numbers (e.g., '1,2,4')"
+    )
+    parser.add_argument(
+        '-l', '--list',
+        action='store_true',
+        help="List available interfaces and exit"
+    )
+    parser.add_argument(
+        '-s', '--save-interval',
+        type=int,
+        default=SAVE_INTERVAL,
+        help=f"Save interval in seconds (default: {SAVE_INTERVAL})"
+    )
+    parser.add_argument(
+        '-b', '--buffer-size',
+        type=int,
+        default=MAX_BUFFER_SIZE,
+        help=f"Max packets in buffer before forced save (default: {MAX_BUFFER_SIZE})"
+    )
+    parser.add_argument(
+        '--send',
+        action='store_true',
+        help="Also start the sender to upload files to server (runs in background)"
+    )
+    
+    args = parser.parse_args()
+    
+    # Get all interfaces
+    all_interfaces = get_if_list()
+    
+    # Just list interfaces and exit
+    if args.list:
+        display_interfaces()
+        sys.exit(0)
+    
+    # Determine which interfaces to use
+    if args.interfaces is None:
+        # Interactive mode - display and prompt
+        display_interfaces()
+        try:
+            selection = input("Enter interface selection (0=all, or comma-separated numbers): ").strip()
+            if not selection:
+                selection = '0'  # Default to all
+        except (EOFError, KeyboardInterrupt):
+            print("\nCancelled.")
+            sys.exit(0)
+        selected_interfaces = parse_interface_selection(selection, all_interfaces)
+    else:
+        # Use command line argument
+        selected_interfaces = parse_interface_selection(args.interfaces, all_interfaces)
+    
+    if not selected_interfaces:
+        logger.error("No valid interfaces selected. Use --list to see available interfaces.")
+        sys.exit(1)
+    
+    logger.info("=" * 60)
+    logger.info("Starting packet sniffer (storage-only mode)")
+    logger.info("=" * 60)
+    logger.info(f"Files will be saved to: {PENDING_DIR}")
+    logger.info(f"Save interval: {args.save_interval} seconds")
+    logger.info(f"Buffer limit: {args.buffer_size} packets")
+    logger.info(f"Selected interfaces ({len(selected_interfaces)}):")
+    for iface in selected_interfaces:
+        logger.info(f"  → {iface}")
+    logger.info("=" * 60)
+    
+    # Start sender in background if --send flag is used
+    sender_thread = None
+    sender_module = None  # Store reference for shutdown
+    if args.send:
+        try:
+            # Import sender module from same directory
+            sender_path = os.path.join(SCRIPT_DIR, 'sender.py')
+            spec = importlib.util.spec_from_file_location('sender', sender_path)
+            sender_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(sender_module)
+            
+            # Start sender in background thread
+            logger.info("Starting sender in background...")
+            sender_thread = threading.Thread(
+                target=sender_module.monitor_and_upload,
+                daemon=True
+            )
+            sender_thread.start()
+            logger.info(f"Sender started - uploading to {sender_module.SERVER_URL}")
+        except Exception as e:
+            logger.error(f"Failed to start sender: {e}")
+            logger.warning("Continuing with sniffing only...")
+    
+    # Start sniffer
+    
+    # Create packet buffer with configured limits
+    packet_buffer = PacketBuffer(args.save_interval, args.buffer_size)
+    
+    # Start a thread for each selected interface
     threads = []
-    for iface in interfaces:
+    for iface in selected_interfaces:
         t = threading.Thread(target=sniff_interface, args=(iface, packet_buffer), daemon=True)
         t.start()
         threads.append(t)
@@ -371,6 +607,11 @@ def main():
     logger.info("Sniffer running. Press Ctrl+C to stop.")
     while running:
         time.sleep(1)
+    
+    # Stop sender gracefully if it was started
+    if sender_module is not None:
+        logger.info("Stopping sender...")
+        sender_module.stop_sender()
     
     # Save final buffer before exit
     logger.info("Saving final buffer...")
@@ -383,3 +624,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
