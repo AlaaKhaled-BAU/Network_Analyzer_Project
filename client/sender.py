@@ -39,6 +39,20 @@ MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds
 BATCH_SIZE = 1000  # Optimal for PostgreSQL bulk inserts
 
+# --- HTTP Session for Connection Pooling ---
+# Using a session reuses TCP connections across requests (keep-alive)
+# This avoids the ~30-50ms overhead of TCP handshake per request
+http_session = requests.Session()
+http_session.headers.update({'Content-Type': 'application/json'})
+
+# --- Sender Running Flag (for graceful shutdown when used with --send) ---
+sender_running = True
+
+def stop_sender():
+    """Stop the sender loop gracefully"""
+    global sender_running
+    sender_running = False
+
 # --- Helper Functions ---
 def read_json_file(json_path: Path) -> List[Dict]:
     """Read JSON file and return list of packet dictionaries"""
@@ -58,13 +72,13 @@ def read_json_file(json_path: Path) -> List[Dict]:
         return []
 
 def upload_packets(packets: List[Dict], retry_count: int = 0) -> bool:
-    """Upload packets to server via HTTP POST"""
+    """Upload packets to server via HTTP POST using persistent session"""
     try:
-        response = requests.post(
+        # Use session for connection reuse (keep-alive)
+        response = http_session.post(
             SERVER_URL,
             json=packets,
-            timeout=30,
-            headers={'Content-Type': 'application/json'}
+            timeout=30
         )
         
         if response.status_code == 200:
@@ -170,6 +184,9 @@ def retry_failed_uploads():
 
 def monitor_and_upload():
     """Main loop - monitor for new files and upload"""
+    global sender_running
+    sender_running = True  # Reset flag when starting
+    
     logger.info("Sender started - monitoring for new files...")
     logger.info(f"Watching: {PENDING_DIR}")
     logger.info(f"Server: {SERVER_URL}")
@@ -180,7 +197,7 @@ def monitor_and_upload():
     
     last_retry_check = datetime.now()
     
-    while True:
+    while sender_running:
         try:
             # Find JSON files with .ready markers
             json_files = []
