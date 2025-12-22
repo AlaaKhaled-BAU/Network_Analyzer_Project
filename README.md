@@ -30,8 +30,10 @@ python aggregator.py
 cd client
 pip install -r requirements.txt
 # Update SERVER_URL in sender.py
-python sniffer.py  # Requires admin/root
-python sender.py   # In separate terminal
+python sniffer.py -i 1 --send   # Sniff interface #1 and upload (requires admin)
+# OR run separately:
+python sniffer.py -i 1           # Sniff only
+python sender.py                 # Upload only (separate terminal)
 ```
 
 ---
@@ -40,9 +42,9 @@ python sender.py   # In separate terminal
 
 ```
 ┌─────────────┐                ┌─────────────┐                ┌─────────────┐
-│ sniffer.py  │ → CSV (5s) →  │ sender.py   │ → HTTP POST → │ Server API  │
+│ sniffer.py  │ → JSON (5s) → │ sender.py   │ → HTTP POST → │ Server API  │
 │ (Process 1) │   + .ready    │ (Process 2) │   (JSON)      │  (FastAPI)  │
-└─────────────┘                └─────────────┘                └─────────────┘
+└─────────────┘  OR --send    └─────────────┘                └─────────────┘
                                                                      ↓
                                                               raw_packets DB
                                                                      ↓
@@ -66,8 +68,8 @@ python sender.py   # In separate terminal
 ```
 client/logs/
 ├── pending_upload/          # Sniffer writes here
-│   ├── packets_YYYYMMDD_HHMMSS.csv
-│   └── packets_YYYYMMDD_HHMMSS.csv.ready  ← Signals file is complete
+│   ├── packets_YYYYMMDD_HHMMSS.json
+│   └── packets_YYYYMMDD_HHMMSS.json.ready  ← Signals file is complete
 ├── processed/               # Successfully uploaded files
 └── failed_uploads/          # Files that couldn't be uploaded
 ```
@@ -128,15 +130,24 @@ DATABASE_URL = "postgresql://user:password@localhost:5432/network_analyzer"
 ## 🔧 Configuration
 
 ### Sniffer (client/sniffer.py)
-```python
-SAVE_INTERVAL = 5  # Save CSV every 5 seconds
+```bash
+python sniffer.py --help              # Show all options
+python sniffer.py -i 1 --send         # Sniff + upload in one command
+python sniffer.py -i 1,2 -s 5 -b 50000  # Custom settings
 ```
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `-i` | Interactive | Interface selection |
+| `-s` | 5 seconds | Save interval |
+| `-b` | 50000 | Buffer size limit |
+| `--send` | Off | Also start sender |
 
 ### Sender (client/sender.py)
 ```python
-SERVER_URL = "http://YOUR_SERVER:8000/ingest_packets"
-POLL_INTERVAL = 1  # Check for files every 1 second
-BATCH_SIZE = 500   # Packets per HTTP request
+SERVER_URL = "http://YOUR_SERVER:8000/ingest"
+POLL_INTERVAL = 1    # Check for files every 1 second
+BATCH_SIZE = 1000    # Packets per HTTP request
 ```
 
 ### Aggregator (server/aggregator.py)
@@ -150,7 +161,7 @@ DATABASE_URL = "postgresql://USER:PASSWORD@HOST:PORT/DATABASE"
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/ingest_packets` | POST | Receive packet batches |
+| `/ingest` | POST | Receive packet batches |
 | `/api/features?window_size=N` | GET | Aggregated features by window |
 | `/api/alerts` | GET | Security alerts with filters |
 | `/api/last10` | GET | Last 10 flows (JSON) |
@@ -167,9 +178,9 @@ DATABASE_URL = "postgresql://USER:PASSWORD@HOST:PORT/DATABASE"
 
 ## 🔒 Race Condition Prevention
 
-1. **Sniffer writes to temp file** → `packets_TIMESTAMP.csv.tmp`
-2. **Atomic rename when complete** → `packets_TIMESTAMP.csv`
-3. **Create ready marker** → `packets_TIMESTAMP.csv.ready`
+1. **Sniffer writes to temp file** → `packets_TIMESTAMP.json.tmp`
+2. **Atomic rename when complete** → `packets_TIMESTAMP.json`
+3. **Create ready marker** → `packets_TIMESTAMP.json.ready`
 4. **Sender only processes files with `.ready` marker**
 
 This ensures sender **never** sees incomplete files.
@@ -192,5 +203,5 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for more details.
 
 ## 📝 License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).
 
