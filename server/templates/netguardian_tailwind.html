@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -49,6 +50,7 @@
         }
     </style>
 </head>
+
 <body class="text-gray-100">
 
     <!-- Top Navigation -->
@@ -65,11 +67,20 @@
 
                 <!-- Navigation Links -->
                 <div class="flex space-x-2">
-                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium transition active" onclick="showPage('dashboard')">Dashboard</a>
-                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition" onclick="showPage('analytics')">Analytics</a>
-                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition" onclick="showPage('security')">Security</a>
-                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition" onclick="showPage('performance')">Performance</a>
-                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition" onclick="showPage('packets')">Packets</a>
+                    <a href="#" class="nav-link px-4 py-2 rounded-lg text-sm font-medium transition active"
+                        onclick="showPage('dashboard')">Dashboard</a>
+                    <a href="#"
+                        class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition"
+                        onclick="showPage('analytics')">Analytics</a>
+                    <a href="#"
+                        class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition"
+                        onclick="showPage('security')">Security</a>
+                    <a href="#"
+                        class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition"
+                        onclick="showPage('performance')">Performance</a>
+                    <a href="#"
+                        class="nav-link px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition"
+                        onclick="showPage('packets')">Packets</a>
                 </div>
 
                 <!-- Right Side -->
@@ -95,7 +106,8 @@
                         <option>Last 7 days</option>
                         <option>Last 30 days</option>
                     </select>
-                    <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                    <button
+                        class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                         <i data-feather="download" class="w-4 h-4"></i>
                         <span>Export Report</span>
                     </button>
@@ -104,7 +116,8 @@
 
             <!-- Main Stats - 4 Cards -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                <div class="stat-card bg-gradient-to-br from-blue-900 to-blue-800 rounded-xl p-6 shadow-lg" data-aos="fade-up">
+                <div class="stat-card bg-gradient-to-br from-blue-900 to-blue-800 rounded-xl p-6 shadow-lg"
+                    data-aos="fade-up">
                     <div class="flex justify-between items-start">
                         <div>
                             <h3 class="text-gray-300 text-sm">Peak Traffic</h3>
@@ -120,7 +133,8 @@
                     </div>
                 </div>
 
-                <div class="stat-card bg-gradient-to-br from-purple-900 to-purple-800 rounded-xl p-6 shadow-lg" data-aos="fade-up" data-aos-delay="100">
+                <div class="stat-card bg-gradient-to-br from-purple-900 to-purple-800 rounded-xl p-6 shadow-lg"
+                    data-aos="fade-up" data-aos-delay="100">
                     <div class="flex justify-between items-start">
                         <div>
                             <h3 class="text-gray-300 text-sm">Avg Traffic</h3>
@@ -136,7 +150,8 @@
                     </div>
                 </div>
 
-                <div class="stat-card bg-gradient-to-br from-green-900 to-green-800 rounded-xl p-6 shadow-lg" data-aos="fade-up" data-aos-delay="200">
+                <div class="stat-card bg-gradient-to-br from-green-900 to-green-800 rounded-xl p-6 shadow-lg"
+                    data-aos="fade-up" data-aos-delay="200">
                     <div class="flex justify-between items-start">
                         <div>
                             <h3 class="text-gray-300 text-sm">Total Packets</h3>
@@ -152,7 +167,8 @@
                     </div>
                 </div>
 
-                <div class="stat-card bg-gradient-to-br from-red-900 to-red-800 rounded-xl p-6 shadow-lg" data-aos="fade-up" data-aos-delay="300">
+                <div class="stat-card bg-gradient-to-br from-red-900 to-red-800 rounded-xl p-6 shadow-lg"
+                    data-aos="fade-up" data-aos-delay="300">
                     <div class="flex justify-between items-start">
                         <div>
                             <h3 class="text-gray-300 text-sm">Active Connections</h3>
@@ -239,7 +255,9 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td colspan="3" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                                <tr>
+                                    <td colspan="3" class="text-center py-4 text-gray-500">Loading...</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -257,7 +275,9 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td colspan="3" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                                <tr>
+                                    <td colspan="3" class="text-center py-4 text-gray-500">Loading...</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -275,7 +295,9 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td colspan="3" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                                <tr>
+                                    <td colspan="3" class="text-center py-4 text-gray-500">Loading...</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -287,7 +309,8 @@
         <div id="analytics-page" class="page">
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold">Advanced Analytics</h1>
-                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                <button
+                    class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                     <i data-feather="bar-chart-2" class="w-4 h-4"></i>
                     <span>Generate Report</span>
                 </button>
@@ -401,19 +424,22 @@
         <div id="security-page" class="page">
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold">Security & Threat Detection</h1>
-                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                <button
+                    class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                     <i data-feather="lock" class="w-4 h-4"></i>
                     <span>Security Report</span>
                 </button>
             </div>
 
-            <div id="security-alert" class="bg-gradient-to-r from-green-900 to-green-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-green-700">
+            <div id="security-alert"
+                class="bg-gradient-to-r from-green-900 to-green-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-green-700">
                 <div class="alert-icon bg-green-500 p-3 rounded-lg">
                     <i data-feather="check-circle" class="w-8 h-8"></i>
                 </div>
                 <div>
                     <h3 id="security-status" class="text-xl font-bold">All Clear</h3>
-                    <p id="security-message" class="text-gray-300 mt-1">No threats detected. Network operating normally.</p>
+                    <p id="security-message" class="text-gray-300 mt-1">No threats detected. Network operating normally.
+                    </p>
                 </div>
             </div>
 
@@ -518,7 +544,8 @@
         <div id="performance-page" class="page">
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold">Network Performance</h1>
-                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                <button
+                    class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                     <i data-feather="zap" class="w-4 h-4"></i>
                     <span>Performance Report</span>
                 </button>
@@ -625,7 +652,8 @@
         <div id="packets-page" class="page">
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold">Captured Packets</h1>
-                <button class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
+                <button
+                    class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                     <i data-feather="save" class="w-4 h-4"></i>
                     <span>Export Packets</span>
                 </button>
@@ -647,16 +675,21 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td colspan="8" class="text-center py-8 text-gray-500">Loading packets...</td></tr>
+                            <tr>
+                                <td colspan="8" class="text-center py-8 text-gray-500">Loading packets...</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
                 <div class="flex justify-center items-center space-x-4 mt-6">
-                    <button onclick="loadPackets(currentPacketPage - 1)" id="prev-btn" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <button onclick="loadPackets(currentPacketPage - 1)" id="prev-btn"
+                        class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled>
                         ← Previous
                     </button>
                     <span id="page-info" class="text-gray-400">Page 1</span>
-                    <button onclick="loadPackets(currentPacketPage + 1)" id="next-btn" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm">
+                    <button onclick="loadPackets(currentPacketPage + 1)" id="next-btn"
+                        class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-sm">
                         Next →
                     </button>
                 </div>
@@ -784,15 +817,36 @@
         }
 
         function calculateDNSHealth(features) {
-            let score = 100;
-            const qrRatio = features.dns_query_count / Math.max(1, features.dns_response_count);
-            if (qrRatio > 1.5 || qrRatio < 0.5) score -= 20;
-            if ((features.avg_dns_query_length || 0) > 50) score -= 30;
-            if ((features.dns_unique_domains || 0) > 300) score -= 25;
-            const dnsRatio = (features.dns_query_count + features.dns_response_count) / Math.max(1, features.packet_count);
-            if (dnsRatio > 0.3) score -= 15;
+            // OPTION 3: Anomaly Detection Score
+            // DNS Health = 100 - (tunneling_risk × 100)
+            // Higher score = healthier DNS, Lower = more suspicious
 
-            return Math.max(0, score);
+            const queries = features.dns_query_count || 0;
+            const responses = features.dns_response_count || 0;
+            const avgQueryLength = features.avg_dns_query_length || 0;
+            const packetCount = features.packet_count || 1;
+
+            // Component 1: Normalized query length (long queries = suspicious, max 100 chars)
+            const normalizedQueryLength = Math.min(1, avgQueryLength / 100);
+
+            // Component 2: Query burst ratio (many DNS queries relative to total traffic = suspicious)
+            const dnsRatio = queries / Math.max(1, packetCount);
+            const queryBurstRatio = Math.min(1, dnsRatio * 10);  // 10% DNS traffic = max suspicious
+
+            // Component 3: Low response rate (no responses = DNS tunneling or failure)
+            const lowResponseRate = queries > 0 ? 1 - (responses / queries) : 0;
+
+            // Weighted tunneling risk score
+            const tunnelingRisk = (
+                0.4 * normalizedQueryLength +   // 40% weight: long queries
+                0.3 * queryBurstRatio +         // 30% weight: too many DNS queries
+                0.3 * Math.max(0, lowResponseRate)  // 30% weight: unanswered queries
+            );
+
+            // DNS Health = inverse of risk (100 = safe, 0 = dangerous)
+            const health = Math.max(0, Math.min(100, (1 - tunnelingRisk) * 100));
+
+            return health;
         }
 
         function calculateBandwidthUtilization(features, maxBandwidth = 1000000000) {
@@ -815,7 +869,7 @@
                 document.getElementById('activeConnections').textContent = formatNumber(data.tcp_count || 0);
 
                 document.getElementById('packetLoss').textContent = ((data.connection_failure_rate || 0) * 100).toFixed(1) + '%';
-                document.getElementById('avgLatency').textContent = data.inter_arrival_time_mean ? 
+                document.getElementById('avgLatency').textContent = data.inter_arrival_time_mean ?
                     ((data.inter_arrival_time_mean || 0) * 1000).toFixed(0) + 'ms' : '0ms';
                 document.getElementById('bandwidthUsage').textContent = calculateBandwidthUtilization(data) + '%';
                 document.getElementById('tcpTraffic').textContent = Math.round(((data.tcp_count || 0) / Math.max(1, data.packet_count)) * 100) + '%';
@@ -866,19 +920,14 @@
 
         async function loadTrafficVolumeChart() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/features`);
+                // USE REAL DATA from /api/traffic-history
+                const response = await fetch(`${API_BASE_URL}/api/traffic-history?hours=24`);
                 const data = await response.json();
 
                 destroyChart('trafficVolumeChart');
 
-                const labels = [];
-                const values = [];
-                const now = new Date();
-                for (let i = 23; i >= 0; i--) {
-                    const time = new Date(now - i * 3600000);
-                    labels.push(time.getHours() + ':00');
-                    values.push(Math.random() * (data.byte_rate_bps || 0) * 0.8 + (data.byte_rate_bps || 0) * 0.2);
-                }
+                const labels = data.labels || [];
+                const values = (data.byte_rates || []).map(v => v / 1000000);  // Convert to MB/s
 
                 const ctx = document.getElementById('trafficVolumeChart');
                 chartInstances.trafficVolumeChart = new Chart(ctx, {
@@ -887,7 +936,7 @@
                         labels: labels,
                         datasets: [{
                             label: 'Traffic (MB/s)',
-                            data: values.map(v => v / 1000000),
+                            data: values,
                             borderColor: '#3b82f6',
                             backgroundColor: 'rgba(59, 130, 246, 0.1)',
                             borderWidth: 2,
@@ -912,7 +961,8 @@
 
         async function loadInboundOutboundChart() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/features`);
+                // USE REAL DATA from /api/traffic-direction
+                const response = await fetch(`${API_BASE_URL}/api/traffic-direction`);
                 const data = await response.json();
 
                 destroyChart('inboundOutboundChart');
@@ -924,7 +974,7 @@
                         labels: ['Inbound', 'Outbound'],
                         datasets: [{
                             label: 'Traffic',
-                            data: [(data.byte_count || 0) * 0.6, (data.byte_count || 0) * 0.4],
+                            data: [data.inbound_bytes || 0, data.outbound_bytes || 0],
                             backgroundColor: ['#3b82f6', '#ec4899'],
                             borderRadius: 8
                         }]
@@ -939,7 +989,7 @@
                                 grid: { color: '#374151' },
                                 ticks: {
                                     color: '#9ca3af',
-                                    callback: function(value) { return formatBytes(value); }
+                                    callback: function (value) { return formatBytes(value); }
                                 }
                             },
                             x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
@@ -953,30 +1003,20 @@
 
         async function loadPacketSizeChart() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/features`);
+                // USE REAL DATA from /api/packet-size-distribution
+                const response = await fetch(`${API_BASE_URL}/api/packet-size-distribution`);
                 const data = await response.json();
 
                 destroyChart('packetSizeChart');
-
-                const buckets = { '<100': 0, '100-500': 0, '500-1000': 0, '1000-1500': 0, '>1500': 0 };
-                const avg = data.avg_packet_size || 0;
-
-                if (avg < 100) {
-                    buckets['<100'] = 60; buckets['100-500'] = 30; buckets['500-1000'] = 10;
-                } else if (avg < 500) {
-                    buckets['<100'] = 20; buckets['100-500'] = 40; buckets['500-1000'] = 30; buckets['1000-1500'] = 10;
-                } else {
-                    buckets['500-1000'] = 20; buckets['1000-1500'] = 50; buckets['>1500'] = 30;
-                }
 
                 const ctx = document.getElementById('packetSizeChart');
                 chartInstances.packetSizeChart = new Chart(ctx, {
                     type: 'bar',
                     data: {
-                        labels: Object.keys(buckets),
+                        labels: data.labels || [],
                         datasets: [{
                             label: 'Packets',
-                            data: Object.values(buckets),
+                            data: data.values || [],
                             backgroundColor: '#8b5cf6',
                             borderRadius: 8
                         }]
@@ -1080,7 +1120,8 @@
         // ==================== ANALYTICS PAGE ====================
         async function loadAnalytics() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/features`);
+                // USE EXTENDED FEATURES for all derived metrics
+                const response = await fetch(`${API_BASE_URL}/api/features-extended`);
                 const features = await response.json();
 
                 const health = calculateNetworkHealth(features);
@@ -1208,6 +1249,10 @@
 
         async function loadTCPFlagsChart(features) {
             try {
+                // USE REAL DATA from /api/tcp-flags
+                const response = await fetch(`${API_BASE_URL}/api/tcp-flags`);
+                const tcpData = await response.json();
+
                 destroyChart('tcpFlagsChart');
 
                 const ctx = document.getElementById('tcpFlagsChart');
@@ -1218,11 +1263,11 @@
                         datasets: [{
                             label: 'Count',
                             data: [
-                                features.tcp_syn_count || 0,
-                                features.tcp_ack_count || 0,
-                                features.tcp_fin_count || 0,
-                                features.tcp_rst_count || 0,
-                                features.tcp_psh_count || 0
+                                tcpData.tcp_syn_count || 0,
+                                tcpData.tcp_ack_count || 0,
+                                tcpData.tcp_fin_count || 0,
+                                tcpData.tcp_rst_count || 0,
+                                tcpData.tcp_psh_count || 0
                             ],
                             backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'],
                             borderRadius: 8
@@ -1236,7 +1281,7 @@
                             y: {
                                 beginAtZero: true,
                                 grid: { color: '#374151' },
-                                ticks: { color: '#9ca3af', callback: function(value) { return formatNumber(value); } }
+                                ticks: { color: '#9ca3af', callback: function (value) { return formatNumber(value); } }
                             },
                             x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
                         }
@@ -1249,6 +1294,10 @@
 
         async function loadDNSAnalysisChart(features) {
             try {
+                // USE REAL DATA from /api/dns-stats
+                const response = await fetch(`${API_BASE_URL}/api/dns-stats`);
+                const dnsData = await response.json();
+
                 destroyChart('dnsAnalysisChart');
 
                 const ctx = document.getElementById('dnsAnalysisChart');
@@ -1259,10 +1308,10 @@
                         datasets: [{
                             label: 'DNS Metrics',
                             data: [
-                                features.dns_query_count || 0,
-                                features.dns_response_count || 0,
-                                features.dns_unique_domains || 0,
-                                (features.avg_dns_query_length || 0) * 10
+                                dnsData.dns_query_count || 0,
+                                dnsData.dns_response_count || 0,
+                                dnsData.dns_unique_domains || 0,
+                                (dnsData.avg_dns_query_length || 0) * 10
                             ],
                             backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'],
                             borderRadius: 8
@@ -1289,7 +1338,7 @@
                 const data = await response.json();
 
                 if (data.error) {
-                    document.getElementById('features-container').innerHTML = 
+                    document.getElementById('features-container').innerHTML =
                         '<p class="text-center text-gray-500 py-8">No data available</p>';
                     return;
                 }
@@ -1355,8 +1404,8 @@
                 const messageEl = document.getElementById('security-message');
 
                 if (mlData.threat_level && mlData.threat_level !== 'NONE' && mlData.threat_level !== 'LOW') {
-                    alertCard.className = mlData.threat_level === 'CRITICAL' ? 
-                        'bg-gradient-to-r from-red-900 to-red-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-red-700' : 
+                    alertCard.className = mlData.threat_level === 'CRITICAL' ?
+                        'bg-gradient-to-r from-red-900 to-red-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-red-700' :
                         'bg-gradient-to-r from-orange-900 to-orange-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-orange-700';
                     alertCard.querySelector('.alert-icon i').setAttribute('data-feather', 'alert-triangle');
                     statusEl.textContent = 'Security Alert';
@@ -1502,18 +1551,26 @@
 
         async function loadDNSQueryLengthChart(features) {
             try {
+                // USE REAL DATA from /api/dns-stats
+                const response = await fetch(`${API_BASE_URL}/api/dns-stats`);
+                const dnsData = await response.json();
+                const dist = dnsData.length_distribution || {};
+
                 destroyChart('dnsQueryLengthChart');
 
-                const avg = features.avg_dns_query_length || 0;
-
-                const data = {
+                const avg = dnsData.avg_dns_query_length || 0;
+                const chartData = {
                     labels: ['<10', '10-20', '20-40', '40-60', '60-100', '>100'],
                     datasets: [{
                         label: 'Query Count',
-                        data: avg < 20 ? [50, 30, 15, 3, 1, 1] :
-                              avg < 40 ? [20, 30, 30, 15, 3, 2] :
-                              avg < 60 ? [10, 20, 25, 25, 15, 5] :
-                              [5, 10, 15, 20, 30, 20],
+                        data: [
+                            dist['<10'] || 0,
+                            dist['10-20'] || 0,
+                            dist['20-40'] || 0,
+                            dist['40-60'] || 0,
+                            dist['60-100'] || 0,
+                            dist['>100'] || 0
+                        ],
                         backgroundColor: avg > 50 ? '#ef4444' : '#10b981',
                         borderRadius: 8
                     }]
@@ -1522,7 +1579,7 @@
                 const ctx = document.getElementById('dnsQueryLengthChart');
                 chartInstances.dnsQueryLengthChart = new Chart(ctx, {
                     type: 'bar',
-                    data: data,
+                    data: chartData,
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
@@ -1541,7 +1598,8 @@
         // ==================== PERFORMANCE PAGE ====================
         async function loadPerformance() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/features`);
+                // USE EXTENDED FEATURES for syn_ack_ratio, port_scan_score, inter_arrival_time
+                const response = await fetch(`${API_BASE_URL}/api/features-extended`);
                 const features = await response.json();
 
                 document.getElementById('perfBandwidth').textContent = calculateBandwidthUtilization(features) + '%';
@@ -1561,16 +1619,14 @@
 
         async function loadByteRateChart(features) {
             try {
+                // USE REAL DATA from /api/traffic-history
+                const response = await fetch(`${API_BASE_URL}/api/traffic-history?hours=12`);
+                const data = await response.json();
+
                 destroyChart('byteRateChart');
 
-                const labels = [];
-                const values = [];
-                const now = new Date();
-                for (let i = 11; i >= 0; i--) {
-                    const time = new Date(now - i * 3600000);
-                    labels.push(time.getHours() + ':00');
-                    values.push(Math.random() * (features.byte_rate_bps || 0) * 0.8 + (features.byte_rate_bps || 0) * 0.2);
-                }
+                const labels = data.labels || [];
+                const values = (data.byte_rates || []).map(v => v / 1000000);  // Convert to MB/s
 
                 const ctx = document.getElementById('byteRateChart');
                 chartInstances.byteRateChart = new Chart(ctx, {
@@ -1579,7 +1635,7 @@
                         labels: labels,
                         datasets: [{
                             label: 'Byte Rate (MB/s)',
-                            data: values.map(v => v / 1000000),
+                            data: values,
                             borderColor: '#3b82f6',
                             backgroundColor: 'rgba(59, 130, 246, 0.1)',
                             borderWidth: 2,
@@ -1604,16 +1660,14 @@
 
         async function loadPacketRateChart(features) {
             try {
+                // USE REAL DATA from /api/traffic-history
+                const response = await fetch(`${API_BASE_URL}/api/traffic-history?hours=12`);
+                const data = await response.json();
+
                 destroyChart('packetRateChart');
 
-                const labels = [];
-                const values = [];
-                const now = new Date();
-                for (let i = 11; i >= 0; i--) {
-                    const time = new Date(now - i * 3600000);
-                    labels.push(time.getHours() + ':00');
-                    values.push(Math.random() * (features.packet_rate_pps || 0) * 0.8 + (features.packet_rate_pps || 0) * 0.2);
-                }
+                const labels = data.labels || [];
+                const values = data.packet_rates || [];
 
                 const ctx = document.getElementById('packetRateChart');
                 chartInstances.packetRateChart = new Chart(ctx, {
@@ -1807,4 +1861,5 @@
         console.log('📡 API URL:', API_BASE_URL);
     </script>
 </body>
+
 </html>

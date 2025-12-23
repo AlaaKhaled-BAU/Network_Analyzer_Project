@@ -5,3 +5,7 @@ dist/
 build/ 
 *.spec 
 "server/traffic_analyzer.db" 
+"JSON/" 
+"aggregated_features/" 
+"client/logs/" 
+"client/profile.svg" 

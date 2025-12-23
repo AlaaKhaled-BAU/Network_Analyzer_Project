@@ -879,6 +879,281 @@ def api_top_ports(limit: int = 5):
         db.close()
 
 
+# ========== NEW ENDPOINTS - REPLACE SIMULATED DATA ==========
+
+@app.get("/api/traffic-history")
+def api_traffic_history(hours: int = 24):
+    """
+    Get real traffic volume over time (replaces random data in trafficVolumeChart).
+    Queries aggregated_features grouped by hour.
+    """
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        
+        # Try aggregated_features first
+        result = db.query(AggregatedFeature).filter(
+            AggregatedFeature.created_at >= cutoff
+        ).order_by(AggregatedFeature.created_at).all()
+        
+        if result:
+            # Group by hour
+            hourly_data = {}
+            for r in result:
+                hour_key = r.created_at.strftime('%H:00') if r.created_at else '00:00'
+                if hour_key not in hourly_data:
+                    hourly_data[hour_key] = {'byte_rate': 0, 'packet_rate': 0, 'count': 0}
+                hourly_data[hour_key]['byte_rate'] += r.byte_rate_bps or 0
+                hourly_data[hour_key]['packet_rate'] += r.packet_rate_pps or 0
+                hourly_data[hour_key]['count'] += 1
+            
+            # Average per hour
+            labels = sorted(hourly_data.keys())
+            byte_rates = [hourly_data[h]['byte_rate'] / max(1, hourly_data[h]['count']) for h in labels]
+            packet_rates = [hourly_data[h]['packet_rate'] / max(1, hourly_data[h]['count']) for h in labels]
+            
+            return {"labels": labels, "byte_rates": byte_rates, "packet_rates": packet_rates}
+        
+        # Fallback: query raw_packets
+        raw_result = db.query(RawPacket).filter(
+            RawPacket.timestamp >= (datetime.utcnow() - timedelta(hours=hours)).timestamp()
+        ).order_by(RawPacket.timestamp).all()
+        
+        if not raw_result:
+            return {"labels": [], "byte_rates": [], "packet_rates": []}
+        
+        hourly_data = {}
+        for p in raw_result:
+            hour_key = datetime.fromtimestamp(p.timestamp).strftime('%H:00') if p.timestamp else '00:00'
+            if hour_key not in hourly_data:
+                hourly_data[hour_key] = {'bytes': 0, 'packets': 0}
+            hourly_data[hour_key]['bytes'] += p.length or 0
+            hourly_data[hour_key]['packets'] += 1
+        
+        labels = sorted(hourly_data.keys())
+        byte_rates = [hourly_data[h]['bytes'] * 8 / 3600 for h in labels]  # bits per second avg
+        packet_rates = [hourly_data[h]['packets'] / 3600 for h in labels]  # packets per second avg
+        
+        return {"labels": labels, "byte_rates": byte_rates, "packet_rates": packet_rates}
+    finally:
+        db.close()
+
+
+@app.get("/api/traffic-direction")
+def api_traffic_direction(local_prefix: str = "192.168."):
+    """
+    Get real inbound vs outbound traffic (replaces 60/40 hardcoded split).
+    Inbound = traffic TO local network, Outbound = traffic FROM local network.
+    """
+    db = SessionLocal()
+    try:
+        result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(5000).all()
+        
+        inbound_bytes = 0
+        outbound_bytes = 0
+        inbound_packets = 0
+        outbound_packets = 0
+        
+        for p in result:
+            is_dst_local = p.dst_ip and p.dst_ip.startswith(local_prefix)
+            is_src_local = p.src_ip and p.src_ip.startswith(local_prefix)
+            
+            if is_dst_local and not is_src_local:
+                # Inbound: external -> local
+                inbound_bytes += p.length or 0
+                inbound_packets += 1
+            elif is_src_local and not is_dst_local:
+                # Outbound: local -> external
+                outbound_bytes += p.length or 0
+                outbound_packets += 1
+            # else: local-to-local or external-to-external, skip
+        
+        return {
+            "inbound_bytes": inbound_bytes,
+            "outbound_bytes": outbound_bytes,
+            "inbound_packets": inbound_packets,
+            "outbound_packets": outbound_packets
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/packet-size-distribution")
+def api_packet_size_distribution():
+    """
+    Get real packet size distribution (replaces heuristic-based chart).
+    Returns counts for size buckets: <100, 100-500, 500-1000, 1000-1500, >1500.
+    """
+    db = SessionLocal()
+    try:
+        result = db.query(RawPacket.length).order_by(desc(RawPacket.id)).limit(5000).all()
+        
+        buckets = {'<100': 0, '100-500': 0, '500-1000': 0, '1000-1500': 0, '>1500': 0}
+        
+        for (length,) in result:
+            if length is None:
+                continue
+            if length < 100:
+                buckets['<100'] += 1
+            elif length < 500:
+                buckets['100-500'] += 1
+            elif length < 1000:
+                buckets['500-1000'] += 1
+            elif length < 1500:
+                buckets['1000-1500'] += 1
+            else:
+                buckets['>1500'] += 1
+        
+        return {"labels": list(buckets.keys()), "values": list(buckets.values())}
+    finally:
+        db.close()
+
+
+@app.get("/api/dns-stats")
+def api_dns_stats():
+    """
+    Get real DNS statistics (replaces missing dns_response_count, dns_unique_domains, avg_dns_query_length).
+    Queries raw_packets for DNS-related fields.
+    """
+    db = SessionLocal()
+    try:
+        result = db.query(RawPacket).filter(
+            RawPacket.dns_qname.isnot(None)
+        ).order_by(desc(RawPacket.id)).limit(5000).all()
+        
+        query_count = sum(1 for p in result if p.dns_query)
+        response_count = sum(1 for p in result if p.dns_response)
+        unique_domains = len(set(p.dns_qname for p in result if p.dns_qname))
+        
+        query_lengths = [len(p.dns_qname) for p in result if p.dns_qname]
+        avg_query_length = sum(query_lengths) / max(1, len(query_lengths)) if query_lengths else 0
+        max_query_length = max(query_lengths) if query_lengths else 0
+        
+        # Get distribution for query length chart
+        length_buckets = {'<10': 0, '10-20': 0, '20-40': 0, '40-60': 0, '60-100': 0, '>100': 0}
+        for length in query_lengths:
+            if length < 10:
+                length_buckets['<10'] += 1
+            elif length < 20:
+                length_buckets['10-20'] += 1
+            elif length < 40:
+                length_buckets['20-40'] += 1
+            elif length < 60:
+                length_buckets['40-60'] += 1
+            elif length < 100:
+                length_buckets['60-100'] += 1
+            else:
+                length_buckets['>100'] += 1
+        
+        return {
+            "dns_query_count": query_count,
+            "dns_response_count": response_count,
+            "dns_unique_domains": unique_domains,
+            "avg_dns_query_length": round(avg_query_length, 1),
+            "max_dns_query_length": max_query_length,
+            "length_distribution": length_buckets
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/tcp-flags")
+def api_tcp_flags():
+    """
+    Get real TCP flags distribution (replaces missing tcp_fin_count, tcp_rst_count, tcp_psh_count).
+    Queries raw_packets for TCP flag fields.
+    """
+    db = SessionLocal()
+    try:
+        result = db.query(RawPacket).filter(
+            RawPacket.protocol == 'TCP'
+        ).order_by(desc(RawPacket.id)).limit(5000).all()
+        
+        syn_count = sum(1 for p in result if p.tcp_syn)
+        ack_count = sum(1 for p in result if p.tcp_ack)
+        fin_count = sum(1 for p in result if p.tcp_fin)
+        rst_count = sum(1 for p in result if p.tcp_rst)
+        psh_count = sum(1 for p in result if p.tcp_psh)
+        
+        return {
+            "tcp_syn_count": syn_count,
+            "tcp_ack_count": ack_count,
+            "tcp_fin_count": fin_count,
+            "tcp_rst_count": rst_count,
+            "tcp_psh_count": psh_count,
+            "total_tcp_packets": len(result)
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/features-extended")
+def api_features_extended(window_size: int = 5):
+    """
+    Extended features endpoint with ALL missing fields calculated from DB.
+    Includes: syn_ack_ratio, port_scan_score, inter_arrival_time, etc.
+    """
+    db = SessionLocal()
+    try:
+        # Get base features
+        base_features = api_features(window_size)
+        if "error" in base_features:
+            return base_features
+        
+        # Calculate additional features from raw_packets
+        raw_packets = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(2000).all()
+        
+        if not raw_packets:
+            return base_features
+        
+        # SYN-ACK ratio
+        syn_count = base_features.get('tcp_syn_count', 0)
+        ack_count = base_features.get('tcp_ack_count', 0)
+        base_features['syn_ack_ratio'] = ack_count / max(1, syn_count) if syn_count > 0 else 0
+        
+        # Port scan score (based on unique ports vs unique IPs ratio)
+        unique_ports = base_features.get('unique_dst_ports', 0)
+        unique_ips = base_features.get('unique_dst_ips', 1)
+        # High ports-per-IP ratio suggests scanning
+        ports_per_ip = unique_ports / max(1, unique_ips)
+        base_features['port_scan_score'] = min(1.0, ports_per_ip / 100)  # Normalize to 0-1
+        
+        # Inter-arrival time (average time between consecutive packets)
+        timestamps = sorted([p.timestamp for p in raw_packets if p.timestamp])
+        if len(timestamps) >= 2:
+            inter_arrivals = [timestamps[i+1] - timestamps[i] for i in range(len(timestamps)-1)]
+            base_features['inter_arrival_time_mean'] = sum(inter_arrivals) / len(inter_arrivals)
+            base_features['inter_arrival_time_std'] = (
+                sum((x - base_features['inter_arrival_time_mean'])**2 for x in inter_arrivals) / len(inter_arrivals)
+            ) ** 0.5
+        else:
+            base_features['inter_arrival_time_mean'] = 0
+            base_features['inter_arrival_time_std'] = 0
+        
+        # Packet size stats
+        lengths = [p.length for p in raw_packets if p.length]
+        if lengths:
+            base_features['min_packet_size'] = min(lengths)
+            base_features['max_packet_size'] = max(lengths)
+            base_features['packet_size_variance'] = sum((x - base_features['avg_packet_size'])**2 for x in lengths) / len(lengths)
+        
+        # TCP flags (query from tcp-flags endpoint)
+        tcp_flags = api_tcp_flags()
+        base_features['tcp_fin_count'] = tcp_flags.get('tcp_fin_count', 0)
+        base_features['tcp_rst_count'] = tcp_flags.get('tcp_rst_count', 0)
+        base_features['tcp_psh_count'] = tcp_flags.get('tcp_psh_count', 0)
+        
+        # DNS stats
+        dns_stats = api_dns_stats()
+        base_features['dns_response_count'] = dns_stats.get('dns_response_count', 0)
+        base_features['dns_unique_domains'] = dns_stats.get('dns_unique_domains', 0)
+        base_features['avg_dns_query_length'] = dns_stats.get('avg_dns_query_length', 0)
+        
+        return base_features
+    finally:
+        db.close()
+
+
 @app.get("/api/packets")
 def api_packets(page: int = 1, limit: int = 20):
     """Get paginated raw packets"""
