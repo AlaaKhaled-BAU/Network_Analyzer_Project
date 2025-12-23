@@ -80,7 +80,7 @@ BATCH_SIZE = 1000   # Upload 1000 packets per HTTP request (optimal for PostgreS
 
 **Purpose:** Read JSON file and return list of packet dictionaries
 
-**The Advantage (vs old CSV):**
+**The Advantage (JSON vs old CSV):**
 JSON files preserve types natively - no string conversion needed:
 ```python
 def read_json_file(json_path):
@@ -89,37 +89,9 @@ def read_json_file(json_path):
     return packets
 ```
 
-**The Solution:**
-```python
-def read_csv_file(csv_path):
-    # Read CSV
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        packets = list(reader)
-    
-    # Convert types
-    for packet in packets:
-        for key, value in packet.items():
-            # Boolean conversion
-            if value == 'True':
-                packet[key] = True
-            elif value == 'False':
-                packet[key] = False
-            
-            # None conversion
-            elif value == 'None' or value == '':
-                packet[key] = None
-            
-            # Integer conversion for port numbers, etc.
-            elif key in ['length', 'src_port', 'dst_port', ...]:
-                packet[key] = int(value) if value else None
-            
-            # Float conversion for timestamp
-            elif key == 'timestamp':
-                packet[key] = float(value)
-```
+> **Note:** The old CSV approach required manual type conversion (booleans, None values, integers, floats). JSON eliminates this complexity entirely.
 
-**Result:** Proper Python types for server API
+**Result:** Proper Python types ready for server API
 
 ---
 
@@ -217,11 +189,11 @@ Give up, move to failed_uploads/
 
 ---
 
-### **5. File Processing Pipeline (Lines 125-180)**
+### **5. File Processing Pipeline (Lines 114-159)**
 
-**Function:** `process_csv_file(csv_path)`
+**Function:** `process_json_file(json_path)`
 
-**Purpose:** Complete workflow for one CSV file
+**Purpose:** Complete workflow for one JSON file
 
 **Flow:**
 
@@ -230,8 +202,8 @@ Give up, move to failed_uploads/
    if not ready_marker.exists():
        return False  # Skip incomplete files
    ↓
-2. Read CSV file
-   packets = read_csv_file(csv_path)
+2. Read JSON file
+   packets = read_json_file(json_path)
    ↓
 3. Upload in batches (if large file)
    for i in range(0, total_packets, BATCH_SIZE):
@@ -240,15 +212,15 @@ Give up, move to failed_uploads/
    ↓
 4. Move file based on result
    if success:
-       csv_path.rename(PROCESSED_DIR / csv_path.name)
+       json_path.rename(PROCESSED_DIR / json_path.name)
    else:
-       csv_path.rename(FAILED_DIR / csv_path.name)
+       json_path.rename(FAILED_DIR / json_path.name)
 ```
 
 **Why batching?**
-- Large CSV might have 10,000+ packets
+- Large JSON file might have 10,000+ packets
 - Uploading in one request = huge payload
-- Split into 500-packet batches = manageable
+- Split into 1000-packet batches = manageable
 
 **Example:**
 ```
@@ -270,7 +242,7 @@ File with 2,000 packets:
 ```python
 def retry_failed_uploads():
     # Find all failed uploads
-    failed_files = list(FAILED_DIR.glob('packets_*.csv'))
+    failed_files = list(FAILED_DIR.glob('packets_*.json'))
     
     if not failed_files:
         return  # Nothing to retry
@@ -278,7 +250,7 @@ def retry_failed_uploads():
     logger.info(f"Retrying {len(failed_files)} failed uploads...")
     
     for failed_file in failed_files:
-        packets = read_csv_file(failed_file)
+        packets = read_json_file(failed_file)
         
         if upload_with_retry(packets):
             # Success! Move to processed
@@ -306,17 +278,17 @@ def monitor_and_upload():
     last_retry_check = datetime.now()
     
     while True:  # Forever loop
-        # 1. Find CSV files with .ready markers
-        csv_files = []
+        # 1. Find JSON files with .ready markers
+        json_files = []
         for ready_file in PENDING_DIR.glob('*.ready'):
-            csv_file = ready_file.with_suffix('')  # Remove .ready
-            if csv_file.exists() and csv_file.suffix == '.csv':
-                csv_files.append(csv_file)
+            json_file = ready_file.with_suffix('')  # Remove .ready
+            if json_file.exists() and json_file.suffix == '.json':
+                json_files.append(json_file)
         
         # 2. Process in chronological order
-        csv_files.sort()
-        for csv_file in csv_files:
-            process_csv_file(csv_file)
+        json_files.sort()
+        for json_file in json_files:
+            process_json_file(json_file)
         
         # 3. Periodic retry of failed uploads (every 5 min)
         if (datetime.now() - last_retry_check).seconds > 300:
@@ -341,36 +313,36 @@ def monitor_and_upload():
 
 ## 📊 Data Flow Example
 
-**Scenario:** Uploading 1 CSV file with 150 packets
+**Scenario:** Uploading 1 JSON file with 150 packets
 
 ```
 1. sniffer.py saves:
-   logs/pending_upload/packets_20251129_220000.csv
-   logs/pending_upload/packets_20251129_220000.csv.ready
+   logs/pending_upload/packets_20251129_220000.json
+   logs/pending_upload/packets_20251129_220000.json.ready
 
-2. sender.py (every 2 seconds):
+2. sender.py (every 1 second):
    - Scans pending_upload/
    - Finds .ready marker
-   - process_csv_file() called
+   - process_json_file() called
 
-3. Read CSV:
+3. Read JSON:
    packets = [
      {timestamp: 1701234567.123, src_ip: "192.168.1.1", ...},
      {timestamp: 1701234567.456, src_ip: "192.168.1.2", ...},
      ... (150 packets total)
    ]
 
-4. Upload (no batching needed, < 500 packets):
-   POST /ingest_packets
+4. Upload (no batching needed, < 1000 packets):
+   POST /ingest
    JSON: [150 packets]
 
 5. Server responds: 200 OK
 
 6. Success! Move file:
-   mv packets_20251129_220000.csv → logs/processed/
-   rm packets_20251129_220000.csv.ready
+   mv packets_20251129_220000.json → logs/processed/
+   rm packets_20251129_220000.json.ready
 
-7. Log: "✓ packets_20251129_220000.csv processed successfully (150 packets)"
+7. Log: "✓ packets_20251129_220000.json processed successfully (150 packets)"
 ```
 
 ---
@@ -422,13 +394,13 @@ python sender.py
 ### Check File Counts
 ```bash
 # Pending uploads (waiting)
-ls logs/pending_upload/*.csv | wc -l
+ls logs/pending_upload/*.json | wc -l
 
 # Processed (successful)
-ls logs/processed/*.csv | wc -l
+ls logs/processed/*.json | wc -l
 
 # Failed (need retry)
-ls logs/failed_uploads/*.csv | wc -l
+ls logs/failed_uploads/*.json | wc -l
 ```
 
 ### Tail Logs
@@ -491,7 +463,7 @@ ERROR: Connection error (attempt 1/3)
 1. Manually upload one file:
    ```python
    import requests
-   packets = [...]  # From CSV
+   packets = [...]  # From JSON file
    response = requests.post(SERVER_URL, json=packets)
    print(response.status_code, response.text)
    ```
@@ -560,7 +532,7 @@ sender.py manages three directories:
 - Kept for audit trail
 - Can be deleted after X days:
   ```bash
-  find logs/processed -name "*.csv" -mtime +7 -delete
+  find logs/processed -name "*.json" -mtime +7 -delete
   ```
 
 ### **failed_uploads/**
@@ -583,7 +555,7 @@ sender.py manages three directories:
 
 **It does NOT:**
 ❌ Capture packets (that's sniffer.py's job)  
-❌ Process or aggregate data (that's aggregator.py's job)  
-❌ Run ML predictions (that's aggregator.py's job)  
+❌ Process or aggregate data (that's main.py + MultiWindowAggregator's job)  
+❌ Run ML predictions (that's main.py's job)  
 
 **Next step:** Ensure server (`main.py`) is running to receive uploads.

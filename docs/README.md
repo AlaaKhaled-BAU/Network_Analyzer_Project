@@ -36,13 +36,6 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
      - Set up web dashboards
      - Add new API endpoints
 
-4. **[aggregator_explained.md](aggregator_explained.md)** - Flow Aggregation Service
-   - **What it does:** Converts raw packets → flows → ML predictions
-   - **Read this if you want to:**
-     - Understand flow aggregation logic
-     - Configure aggregation intervals
-     - Optimize ML predictions
-     - Manage database cleanup
 
 ---
 
@@ -55,9 +48,8 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 | Set up packet capture | [sniffer_explained.md](sniffer_explained.md) |
 | Configure file uploads | [sender_explained.md](sender_explained.md) |
 | Set up the server | [main_explained.md](main_explained.md) |
-| Understand flow aggregation | [aggregator_explained.md](aggregator_explained.md) |
 | Deploy the entire system | [../DEPLOYMENT.md](../DEPLOYMENT.md) |
-| Understand the architecture | [../SEPARATED_ARCHITECTURE.md](../SEPARATED_ARCHITECTURE.md) |
+| Understand database schema | [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) |
 
 ---
 
@@ -81,10 +73,10 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 │                 SERVER SIDE                         │
 │─────────────────────────────────────────────────────│
 │                                                     │
-│  main.py             →    aggregator.py            │
-│  [main_explained]         [aggregator_explained]   │
+│  main.py (integrated aggregation + ML)              │
+│  [main_explained]                                   │
 │                                                     │
-│  Receives data            Aggregates & predicts    │
+│  Receives data, aggregates, predicts                │
 │                                                     │
 └─────────────────────────────────────────────────────┘
 ```
@@ -95,38 +87,58 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 
 ### For New Users
 1. Start with [../README.md](../README.md) - Project overview
-2. Read [../SEPARATED_ARCHITECTURE.md](../SEPARATED_ARCHITECTURE.md) - Architecture
-3. Read [sniffer_explained.md](sniffer_explained.md) - Understand capture
-4. Read [sender_explained.md](sender_explained.md) - Understand uploads
-5. Read [main_explained.md](main_explained.md) - Understand server
-6. Read [aggregator_explained.md](aggregator_explained.md) - Understand ML
-7. Follow [../DEPLOYMENT.md](../DEPLOYMENT.md) - Deploy system
+2. Read [sniffer_explained.md](sniffer_explained.md) - Understand capture
+3. Read [sender_explained.md](sender_explained.md) - Understand uploads
+4. Read [main_explained.md](main_explained.md) - Understand server + ML
+5. Follow [../DEPLOYMENT.md](../DEPLOYMENT.md) - Deploy system
 
 ### For Developers
 1. [sniffer_explained.md](sniffer_explained.md) - Client capture logic
 2. [sender_explained.md](sender_explained.md) - Client upload logic
-3. [main_explained.md](main_explained.md) - Server API
-4. [aggregator_explained.md](aggregator_explained.md) - ML pipeline
+3. [main_explained.md](main_explained.md) - Server API + ML pipeline
+4. [aggregation_strategy.md](aggregation_strategy.md) - Aggregation approach
 
 ### For System Administrators
 1. [../DEPLOYMENT.md](../DEPLOYMENT.md) - Deployment guide
 2. [main_explained.md](main_explained.md) - Server configuration
-3. [aggregator_explained.md](aggregator_explained.md) - Background services
+3. [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) - Database structure
 
 ---
 
 ## 🔧 Component Details
 
-### **sniffer.py** (Lines: 415)
+### **sniffer.py** (Lines: ~630)
 - **Language:** Python
-- **Dependencies:** Scapy, threading
+- **Dependencies:** Scapy, threading, argparse
 - **Requires:** Admin/root privileges
 - **Output:** JSON files in `logs/pending_upload/`
 - **Key Features:**
+  - CLI interface (`-i`, `--list`, `--send`)
   - Multi-interface capture
   - 30+ packet features
   - Atomic file writes
-  - Periodic saves (5s)
+  - 5s save interval
+
+### **sender.py** (Lines: ~250)
+- **Language:** Python
+- **Dependencies:** requests
+- **Requires:** Network access to server
+- **Input:** JSON files from `logs/pending_upload/`
+- **Key Features:**
+  - Continuous file monitoring (1s poll)
+  - HTTP uploads with retry
+  - Connection pooling
+  - Failed upload queue
+
+### **main.py** (Lines: ~1400)
+- **Language:** Python (FastAPI)
+- **Dependencies:** FastAPI, SQLAlchemy, PostgreSQL, XGBoost
+- **Port:** 8000 (default)
+- **Key Features:**
+  - `/ingest` endpoint for packet ingestion
+  - Integrated MultiWindowAggregator (5s/30s/180s)
+  - Real-time dashboard with charts
+  - JSON APIs for alerts and features
 
 ### **sender.py** (Lines: 260)
 - **Language:** Python
@@ -149,14 +161,6 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
   - JSON APIs
   - Health checks
 
-### **aggregator.py** (Lines: 260)
-- **Language:** Python
-- **Dependencies:** SQLAlchemy, pandas, joblib
-- **Runs:** Background async service
-- **Key Features:**
-  - Flow aggregation (30s cycles)
-  - ML predictions
-  - Database cleanup (hourly)
 
 ---
 
@@ -182,11 +186,10 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 
 | Setting | File | Line | Default | Purpose |
 |---------|------|------|---------|---------|
-| Save interval | sniffer.py | 28 | 5s | How often to save JSON |
+| Save interval | sniffer.py | CLI `-s` | 5s | How often to save JSON |
 | Server URL | sender.py | 36 | `http://...` | Upload destination |
 | Poll interval | sender.py | 37 | 1s | File check frequency |
 | Database URL | main.py | 21 | `postgresql://...` | Database connection |
-| Aggregation interval | aggregator.py | 138 | 30s | Flow processing frequency |
 
 ### Important Directories
 
@@ -200,8 +203,9 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 
 | Table | Purpose | Written by | Read by |
 |-------|---------|------------|---------|
-| `raw_packets` | Complete packet logs | main.py | aggregator.py |
-| `traffic_data` | Aggregated flows | aggregator.py | main.py (dashboards) |
+| `raw_packets` | Complete packet logs | main.py | main.py (aggregator) |
+| `aggregated_features` | Multi-window ML features | main.py | main.py (dashboard) |
+| `detected_alerts` | Security alerts | main.py | main.py (dashboard) |
 
 ---
 
@@ -227,13 +231,9 @@ JSON files (logs/pending_upload/)
     ↓
 HTTP POST
     ↓
-[main.py] → Receive & store
+[main.py] → Receive, store, aggregate, predict
     ↓
-PostgreSQL (raw_packets table)
-    ↓
-[aggregator.py] → Aggregate & predict
-    ↓
-PostgreSQL (traffic_data table)
+PostgreSQL (raw_packets, aggregated_features, detected_alerts)
     ↓
 Web Dashboard (main.py)
 ```
@@ -243,9 +243,9 @@ Web Dashboard (main.py)
 ## 📝 Document Metadata
 
 - **Created:** 2025-11-29
-- **Total Documentation Files:** 4
-- **Total Lines Documented:** ~1500 lines
-- **Last Updated:** 2025-11-29
+- **Total Documentation Files:** 3 (sniffer, sender, main)
+- **Total Lines Documented:** ~2000+ lines
+- **Last Updated:** 2025-12-23
 
 ---
 

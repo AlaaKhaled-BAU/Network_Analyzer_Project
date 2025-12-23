@@ -21,16 +21,18 @@ Every 3min: Query raw_packets (last 3 minutes)   ← Query 3 (very redundant!)
 
 **Optimized cascading aggregation:**
 ```
-Every 5s:  Query raw_packets → predictions_5s
+Every 5s:  Query raw_packets → aggregated_features (window_size=5)
              ↓
-Every 30s: Query predictions_5s (last 6 entries) → predictions_30s
+Every 30s: Query aggregated_features WHERE window_size=5 (last 6 entries) → aggregated_features (window_size=30)
              ↓
-Every 3min: Query predictions_5s (last 36 entries) → predictions_3min
+Every 3min: Query aggregated_features WHERE window_size=5 (last 36 entries) → aggregated_features (window_size=180)
 ```
+
+> **Note:** The old approach used separate tables (`predictions_5s`, `predictions_30s`, `predictions_3min`). The current implementation uses a single `aggregated_features` table with a `window_size` column (5, 30, or 180 seconds).
 
 **Benefits:**
 - ✅ Only 1 query to raw_packets (every 5s)
-- ✅ 30s and 3min windows aggregate from predictions_5s
+- ✅ 30s and 3min windows aggregate from 5s window data
 - ✅ Much lower database load
 - ✅ Faster processing
 - ✅ Reuses already-aggregated data
@@ -48,51 +50,51 @@ Flow:
 1. Query raw_packets (last 5 seconds)
 2. Aggregate into flows
 3. Extract raw features + flow features
-4. Store in predictions_5s table
+4. Store in aggregated_features (window_size=5)
 ```
 
-**Database operations:** 1 read (raw_packets), 1 write (predictions_5s)
+**Database operations:** 1 read (raw_packets), 1 write (aggregated_features)
 
 ---
 
 ### Every 30 Seconds (iteration % 6 == 0):
 ```python
-# Aggregate from predictions_5s
+# Aggregate from 5s window data
 await process_30s_window()
 
 Flow:
-1. Query predictions_5s (ORDER BY created_at DESC LIMIT 6)
+1. Query aggregated_features WHERE window_size=5 (ORDER BY created_at DESC LIMIT 6)
    → Gets last 6 × 5s = 30 seconds
-2. Aggregate the 6 predictions:
+2. Aggregate the 6 records:
    - Sum total_packets
    - Sum flow_counts
    - Average packet_rates
    - Max unique_src_ips/dst_ips
-3. Store in predictions_30s table
+3. Store in aggregated_features (window_size=30)
 ```
 
-**Database operations:** 1 read (predictions_5s), 1 write (predictions_30s)  
+**Database operations:** 1 read (aggregated_features), 1 write (aggregated_features)  
 **No raw_packets query!** ✅
 
 ---
 
 ### Every 3 Minutes (iteration % 36 == 0):
 ```python
-# Aggregate from predictions_5s
+# Aggregate from 5s window data
 await process_3min_window()
 
 Flow:
-1. Query predictions_5s (ORDER BY created_at DESC LIMIT 36)
+1. Query aggregated_features WHERE window_size=5 (ORDER BY created_at DESC LIMIT 36)
    → Gets last 36 × 5s = 180 seconds = 3 minutes
-2. Aggregate the 36 predictions:
+2. Aggregate the 36 records:
    - Sum total_packets
    - Sum flow_counts
    - Average packet_rates
    - Max unique_src_ips/dst_ips
-3. Store in predictions_3min table
+3. Store in aggregated_features (window_size=180)
 ```
 
-**Database operations:** 1 read (predictions_5s), 1 write (predictions_3min)  
+**Database operations:** 1 read (aggregated_features), 1 write (aggregated_features)  
 **No raw_packets query!** ✅
 
 ---
@@ -101,16 +103,16 @@ Flow:
 
 ### Example: 30-Second Window
 
-**predictions_5s table:**
+**aggregated_features table (window_size=5):**
 ```
-id | window_start        | window_end          | total_packets | flow_count | avg_packet_rate
----|---------------------|---------------------|---------------|------------|----------------
-1  | 2025-11-29 23:30:00 | 2025-11-29 23:30:05 | 150           | 12         | 30.0
-2  | 2025-11-29 23:30:05 | 2025-11-29 23:30:10 | 200           | 15         | 40.0
-3  | 2025-11-29 23:30:10 | 2025-11-29 23:30:15 | 180           | 14         | 36.0
-4  | 2025-11-29 23:30:15 | 2025-11-29 23:30:20 | 220           | 16         | 44.0
-5  | 2025-11-29 23:30:20 | 2025-11-29 23:30:25 | 190           | 13         | 38.0
-6  | 2025-11-29 23:30:25 | 2025-11-29 23:30:30 | 160           | 11         | 32.0
+id | window_start        | window_end          | window_size | total_packets | flow_count | avg_packet_rate
+---|---------------------|---------------------|-------------|---------------|------------|----------------
+1  | 2025-11-29 23:30:00 | 2025-11-29 23:30:05 | 5           | 150           | 12         | 30.0
+2  | 2025-11-29 23:30:05 | 2025-11-29 23:30:10 | 5           | 200           | 15         | 40.0
+3  | 2025-11-29 23:30:10 | 2025-11-29 23:30:15 | 5           | 180           | 14         | 36.0
+4  | 2025-11-29 23:30:15 | 2025-11-29 23:30:20 | 5           | 220           | 16         | 44.0
+5  | 2025-11-29 23:30:20 | 2025-11-29 23:30:25 | 5           | 190           | 13         | 38.0
+6  | 2025-11-29 23:30:25 | 2025-11-29 23:30:30 | 5           | 160           | 11         | 32.0
 ```
 
 **Aggregation (last 6 rows):**
@@ -122,10 +124,11 @@ window_start = min(2025-11-29 23:30:00)
 window_end = max(2025-11-29 23:30:30)
 ```
 
-**Result stored in predictions_30s:**
+**Result stored in aggregated_features (window_size=30):**
 ```
 window_start: 2025-11-29 23:30:00
 window_end: 2025-11-29 23:30:30
+window_size: 30
 total_packets: 1100
 flow_count: 81
 avg_packet_rate: 36.67
@@ -148,8 +151,8 @@ Total: ~14 queries/min to raw_packets
 **New approach:**
 ```
 5s windows:   12 queries to raw_packets
-30s windows:  2 queries to predictions_5s (NOT raw_packets!)
-3min windows: 0.33 queries to predictions_5s (NOT raw_packets!)
+30s windows:  2 queries to aggregated_features (NOT raw_packets!)
+3min windows: 0.33 queries to aggregated_features (NOT raw_packets!)
 Total: 12 queries/min to raw_packets (14% reduction)
 ```
 
@@ -218,10 +221,10 @@ def aggregate_5s_predictions(count):
 ```
 raw_packets (queried once per 5s)
     ↓
-predictions_5s (base window, stores all features)
-    ↓                           ↓
-predictions_30s            predictions_3min
-(aggregate 6×5s)          (aggregate 36×5s)
+aggregated_features (window_size=5, base window)
+    ↓                              ↓
+aggregated_features            aggregated_features
+(window_size=30)               (window_size=180)
 ```
 
 This is a **much better architecture**! Great catch! 🎉

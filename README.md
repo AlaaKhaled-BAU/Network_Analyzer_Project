@@ -19,12 +19,6 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-**Aggregator** (separate terminal):
-```bash
-cd server
-python aggregator.py
-```
-
 **Client**:
 ```bash
 cd client
@@ -150,7 +144,7 @@ POLL_INTERVAL = 1    # Check for files every 1 second
 BATCH_SIZE = 1000    # Packets per HTTP request
 ```
 
-### Aggregator (server/aggregator.py)
+### Server (server/app/main.py)
 ```python
 DATABASE_URL = "postgresql://USER:PASSWORD@HOST:PORT/DATABASE"
 ```

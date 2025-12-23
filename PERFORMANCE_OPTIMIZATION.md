@@ -196,12 +196,12 @@ Add these indexes BEFORE DoS testing:
 # Critical indexes for DoS logging
 Index('idx_raw_packets_timestamp_dos', raw_packets_table.c.timestamp, raw_packets_table.c.src_ip)
 Index('idx_raw_packets_protocol', raw_packets_table.c.protocol)
-Index('idx_traffic_data_timestamp', traffic_table.c.created_at)
+Index('idx_aggregated_features_timestamp', aggregated_features_table.c.created_at)
 
 # Partial index for alerts (faster queries)
-Index('idx_traffic_alerts', 
-      traffic_table.c.predicted_label,
-      postgresql_where=(traffic_table.c.predicted_label != 'Normal'))
+Index('idx_alerts_severity', 
+      detected_alerts_table.c.severity,
+      postgresql_where=(detected_alerts_table.c.severity.in_(['Critical', 'High'])))
 ```
 
 ---
@@ -274,14 +274,16 @@ Index('idx_raw_packets_src_ip', raw_packets_table.c.src_ip)
 Index('idx_raw_packets_dst_ip', raw_packets_table.c.dst_ip)
 Index('idx_raw_packets_protocol', raw_packets_table.c.protocol)
 
-# Indexes for traffic_data table
-Index('idx_traffic_predicted_label', traffic_table.c.predicted_label)
-Index('idx_traffic_created_at', traffic_table.c.created_at)
-Index('idx_traffic_dest_ip', traffic_table.c.dest_ip)
-Index('idx_traffic_source_mac', traffic_table.c.source_mac)
+# Indexes for aggregated_features table
+Index('idx_features_window_size', aggregated_features_table.c.window_size)
+Index('idx_features_created_at', aggregated_features_table.c.created_at)
+
+# Indexes for detected_alerts table
+Index('idx_alerts_severity', detected_alerts_table.c.severity)
+Index('idx_alerts_created_at', detected_alerts_table.c.created_at)
 
 # Composite index for common queries
-Index('idx_traffic_time_label', traffic_table.c.created_at, traffic_table.c.predicted_label)
+Index('idx_features_time_window', aggregated_features_table.c.created_at, aggregated_features_table.c.window_size)
 ```
 
 **Expected Gain:** 100-1000x faster queries on large datasets (millions of rows)

@@ -21,6 +21,75 @@
 
 ---
 
+## 🖥️ Command-Line Interface
+
+The sniffer supports several command-line arguments for flexible configuration:
+
+### Basic Usage
+
+```bash
+cd client
+python sniffer.py [options]
+```
+
+> **Note:** Requires administrator/root privileges for packet capture.
+
+### Available Arguments
+
+| Argument | Short | Default | Description |
+|----------|-------|---------|-------------|
+| `--list` | `-l` | - | List all network interfaces and exit |
+| `--interfaces` | `-i` | Interactive | Select which interfaces to sniff |
+| `--save-interval` | `-s` | 5 seconds | Time between JSON saves |
+| `--buffer-size` | `-b` | 50000 | Max packets before forced save |
+| `--send` | - | Off | Also start sender in background |
+
+### Examples
+
+```bash
+# List all available network interfaces
+python sniffer.py --list
+
+# Sniff on interface #1 only
+python sniffer.py -i 1
+
+# Sniff on multiple interfaces
+python sniffer.py -i 1,3,5
+
+# Sniff on ALL interfaces
+python sniffer.py -i all
+python sniffer.py -i 0
+
+# Sniff AND send to server in one command
+python sniffer.py -i 1 --send
+
+# Custom save interval (10 seconds) and buffer size
+python sniffer.py -i 1 -s 10 -b 100000
+
+# Full example: specific interface, custom settings, with sending
+python sniffer.py -i 2 -s 5 -b 50000 --send
+```
+
+### Interface Selection
+
+When you run `python sniffer.py --list`, you'll see output like:
+```
+======================================================================
+AVAILABLE NETWORK INTERFACES
+======================================================================
+   1. Realtek Gaming GbE Family Controller (192.168.1.5)
+   2. Radmin VPN (26.178.118.134)
+   3. Intel(R) Wi-Fi 6 AX201 (192.168.1.10)
+   4. Npcap Loopback Adapter
+----------------------------------------------------------------------
+   0. ALL interfaces (4 total)
+======================================================================
+```
+
+If you don't specify `-i`, the sniffer enters **interactive mode** and prompts you to choose.
+
+---
+
 ## 🏗️ Architecture
 
 ```
@@ -111,11 +180,11 @@ if IP in pkt:                    # Check if IPv4 packet
 **Purpose:** Save packets to JSON without risk of corruption
 
 **The Problem:**
-If you write directly to a CSV file, another process might read it while it's incomplete:
+If you write directly to a JSON file, another process might read it while it's incomplete:
 ```python
 # BAD: sender.py might read incomplete file!
-with open('packets.csv', 'w') as f:
-    writer.writerows(packets)  # Writing...
+with open('packets.json', 'w') as f:
+    json.dump(packets, f)  # Writing...
 ```
 
 **The Solution - Atomic Writes:**
@@ -170,7 +239,7 @@ def save_buffer(self):
         self.buffer.clear()  # Clear buffer
     
     # Save in background thread (non-blocking)
-    threading.Thread(target=save_to_csv_atomic, ...).start()
+    threading.Thread(target=save_to_json_atomic, ...).start()
 ```
 Saves current buffer to file and clears it.
 
@@ -183,7 +252,7 @@ def periodic_save(self):
         if time_since_last_save >= self.save_interval:
             self.save_buffer()  # Auto-save!
 ```
-Background thread that auto-saves every 30 seconds.
+Background thread that auto-saves every 5 seconds.
 
 ---
 
@@ -284,12 +353,12 @@ Each interface gets its own capture thread, all writing to the same buffer.
    ↓
 5. PacketBuffer.add_packet() adds to buffer
    ↓
-6. (After 30 seconds or at shutdown)
+6. (After 5 seconds or at shutdown)
    ↓
-7. save_to_csv_atomic() writes:
-   - logs/pending_upload/packets_20251129_220000.csv.tmp
-   - Rename to: packets_20251129_220000.csv
-   - Create: packets_20251129_220000.csv.ready
+7. save_to_json_atomic() writes:
+   - logs/pending_upload/packets_20251129_220000.json.tmp
+   - Rename to: packets_20251129_220000.json
+   - Create: packets_20251129_220000.json.ready
    ↓
 8. sender.py detects .ready file and uploads
 ```
@@ -352,8 +421,8 @@ python sniffer.py
 ```bash
 ls -lh logs/pending_upload/
 # Look for:
-# - .csv files (actual data)
-# - .csv.ready files (completion markers)
+# - .json files (actual data)
+# - .json.ready files (completion markers)
 ```
 
 ### Count Packets in Buffer (Add Debug Logging)
@@ -428,11 +497,10 @@ sudo python sniffer.py
 ### Missing Some Packet Fields
 **Cause:** Not all packets have all fields (e.g., UDP packets don't have TCP flags)
 
-**This is normal:** Fields are set to `None` if not applicable
-```csv
-timestamp,protocol,src_port,tcp_flags
-1234567.123,UDP,53,None
-1234567.456,TCP,80,SYN,ACK
+**This is normal:** Fields are set to `null` if not applicable
+```json
+{"timestamp": 1234567.123, "protocol": "UDP", "src_port": 53, "tcp_flags": null}
+{"timestamp": 1234567.456, "protocol": "TCP", "src_port": 80, "tcp_flags": "SYN,ACK"}
 ```
 
 ---
@@ -494,7 +562,7 @@ timestamp,protocol,src_port,tcp_flags
 
 **It does NOT:**
 ❌ Upload to server (that's sender.py's job)  
-❌ Aggregate data (that's aggregator.py's job)  
-❌ Run ML predictions (that's aggregator.py's job)  
+❌ Aggregate data (that's main.py + MultiWindowAggregator's job)  
+❌ Run ML predictions (that's main.py's job)  
 
-**Next step:** Run `sender.py` to upload these CSV files to the server.
+**Next step:** Run `sender.py` to upload these JSON files to the server.

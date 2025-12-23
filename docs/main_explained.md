@@ -24,15 +24,20 @@
 ## 🏗️ Architecture
 
 ```
-sender.py → POST /ingest_packets → main.py → PostgreSQL
-                                       ↓
-                                   raw_packets table
-                                       ↓
-                            (aggregator.py processes)
-                                       ↓
-                                  traffic_data table
-                                       ↓
-                    GET /api/last10 ← main.py serves
+sender.py → POST /ingest → main.py → PostgreSQL
+                                │
+                                ├──► raw_packets table
+                                │
+                                ├──► MultiWindowAggregator (5s/30s/180s)
+                                │         │
+                                │         └──► aggregated_features table
+                                │
+                                ├──► XGBoost ML Predictor
+                                │         │
+                                │         └──► detected_alerts table
+                                │
+              GET /api/features ◄─ main.py serves
+              GET /api/alerts   ◄─
 ```
 
 ---
@@ -66,28 +71,46 @@ raw_packets_table = Table(
 
 ---
 
-#### **traffic_data** - Aggregated flows with ML predictions
+#### **aggregated_features** - Multi-window aggregated features
 ```python
-traffic_table = Table(
-    "traffic_data", metadata,
-    Column("id_num", Integer, primary_key=True, autoincrement=True),
-    Column("dest_ip", String),
-    Column("source_mac", String),
-    Column("dest_mac", String),
-    Column("packet_count", Integer),
-    Column("packet_per_sec", Float),
-    Column("byte_count", Integer),
-    Column("byte_per_sec", Float),
-    Column("tcp_flags", String),
-    Column("connection_attempts", Integer),
-    Column("unique_ports", Integer),
-    Column("protocol", String),
-    Column("predicted_label", String),  # ML prediction
+aggregated_features_table = Table(
+    "aggregated_features", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("window_size", Integer),       # 5, 30, or 180 seconds
+    Column("window_start", DateTime),
+    Column("window_end", DateTime),
+    Column("total_packets", Integer),
+    Column("avg_packet_rate", Float),
+    Column("total_bytes", Integer),
+    Column("avg_byte_rate", Float),
+    Column("unique_src_ips", Integer),
+    Column("unique_dst_ips", Integer),
+    Column("unique_protocols", Integer),
+    # ... 60+ feature columns for ML
     Column("created_at", DateTime, default=datetime.utcnow)
 )
 ```
 
-**Purpose:** Stores aggregated network flows with ML intrusion detection labels
+**Purpose:** Stores multi-window (5s/30s/3min) aggregated features for ML analysis
+
+---
+
+#### **detected_alerts** - Security alerts from ML predictions
+```python
+detected_alerts_table = Table(
+    "detected_alerts", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("alert_type", String),         # SYN_Flood, Port_Scan, etc.
+    Column("severity", String),           # Critical, High, Medium, Low
+    Column("source_ip", String),
+    Column("destination_ip", String),
+    Column("confidence", Float),          # ML confidence score
+    Column("description", String),
+    Column("created_at", DateTime, default=datetime.utcnow)
+)
+```
+
+**Purpose:** Stores ML-detected security events with severity and confidence
 
 ---
 
@@ -220,7 +243,7 @@ async def ingest_packets(packets: List[RawPacket]):
 }
 ```
 
-**Note:** Mostly replaced by aggregator.py which automates this
+**Note:** ML predictions are now run automatically via background threads when packets are ingested.
 
 ---
 
@@ -230,7 +253,7 @@ async def ingest_packets(packets: List[RawPacket]):
 **Returns:** HTML page with auto-refreshing table
 
 **Features:**
-- Shows last 10 flows from `traffic_data` table
+- Shows latest aggregated features from `aggregated_features` table
 - Auto-refreshes every 5 seconds via JavaScript
 - Displays: ID, IPs, MACs, packet stats, predicted label
 
@@ -335,16 +358,17 @@ async def ingest_packets(packets: List[RawPacket]):
      "message": "Packets stored in raw_packets table"
    }
 
-5. aggregator.py (separate process):
-   - Queries new packets from raw_packets
-   - Aggregates into flows
-   - Runs ML predictions
-   - Inserts into traffic_data
+5. Background processing (integrated in main.py):
+   - MultiWindowAggregator processes packets
+   - Aggregates into 5s/30s/180s windows
+   - Stores features in aggregated_features
+   - Runs XGBoost ML predictions
+   - Stores alerts in detected_alerts
 
 6. Web dashboard refreshes:
-   - Calls /api/last10
-   - Gets aggregated flows with predictions
-   - Updates HTML table
+   - Calls /api/features, /api/alerts
+   - Gets aggregated data with predictions
+   - Updates UI with real-time charts
 ```
 
 ---
@@ -479,7 +503,7 @@ psql -U postgres -d Traffic_Analyzer
 1. Add database indexes:
    ```sql
    CREATE INDEX idx_timestamp ON raw_packets(timestamp);
-   CREATE INDEX idx_created_at ON traffic_data(created_at DESC);
+   CREATE INDEX idx_created_at ON aggregated_features(created_at DESC);
    ```
 
 2. Use pagination:
@@ -545,9 +569,8 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 **It does NOT:**
 ❌ Capture packets (that's sniffer.py)  
 ❌ Upload files (that's sender.py)  
-❌ Aggregate flows (that's aggregator.py)  
 
-**Dependencies:** FastAPI, SQLAlchemy, PostgreSQL, ML model
+**Dependencies:** FastAPI, SQLAlchemy, PostgreSQL, XGBoost
 
 **Default Port:** 8000  
 **Web UI:** `http://SERVER_IP:8000/`

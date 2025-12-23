@@ -8,25 +8,30 @@ The refactored architecture uses **direct HTTP streaming** from client to server
 
 ```
 ┌─────────────────┐
-│  sniffer.py     │  Captures packets, batches them, sends via HTTP POST
+│  sniffer.py     │  Captures packets, saves to JSON every 5s
 │  (Client)       │
 └────────┬────────┘
-         │ HTTP POST /ingest_packets
+         │ JSON files + .ready markers
          ▼
 ┌─────────────────┐
-│  main.py        │  FastAPI server, receives raw packets
-│  (Server)       │
+│  sender.py      │  Monitors files, uploads via HTTP POST
+│  (Client)       │
 └────────┬────────┘
-         │
-         ├──► PostgreSQL (raw_packets table) ──┐
-         │                                      │
-         │                                      ▼
-         │                              ┌──────────────┐
-         │                              │ aggregator.py│ Async aggregation
-         │                              └──────┬───────┘
-         │                                     │
-         └──────► PostgreSQL (traffic_data) ◄──┘
-                  (with ML predictions)
+         │ HTTP POST /ingest
+         ▼
+┌───────────────────────────────────────────────┐
+│  main.py (FastAPI Server)                     │
+│  ├── Stores packets in raw_packets           │
+│  ├── Runs MultiWindowAggregator (5s/30s/3min) │
+│  ├── Stores features in aggregated_features  │
+│  └── XGBoost ML predictions → detected_alerts │
+└───────────────────────────────────────────────┘
+                         │
+                         ▼
+                   PostgreSQL
+              (3 tables: raw_packets,
+               aggregated_features,
+               detected_alerts)
 ```
 
 ## Installation
@@ -45,13 +50,16 @@ CREATE DATABASE Traffic_Analyzer;
 ```
 
 3. **Update Database Credentials**:
-Edit `server/app/main.py` and `server/aggregator.py`:
+Edit `server/app/main.py`:
 ```python
 DATABASE_URL = "postgresql://YOUR_USER:YOUR_PASSWORD@localhost:5432/Traffic_Analyzer"
 ```
 
-4. **Place ML Model**:
-Ensure `AI_model.pkl` is in `server/models/` directory.
+4. **ML Model Files**:
+Ensure these files exist in `server/models/`:
+- `xgb_model.pkl` - XGBoost model
+- `label_encoder.pkl` - Label encoder
+- `feature_names.pkl` - Feature names
 
 ### Client Setup
 
@@ -62,9 +70,9 @@ pip install scapy requests
 ```
 
 2. **Update Server URL**:
-Edit `client/sniffer.py`:
+Edit `client/sender.py`:
 ```python
-SERVER_URL = "http://YOUR_SERVER_IP:8000/ingest_packets"
+SERVER_URL = "http://YOUR_SERVER_IP:8000/ingest"
 ```
 
 ## Running the System
@@ -76,48 +84,42 @@ cd server
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-### Start Aggregator (Terminal 2)
-
-```bash
-cd server
-python aggregator.py
-```
-
-### Start Sniffer (Terminal 3)
+### Start Client (Terminal 2)
 
 **Windows (Administrator required)**:
 ```bash
 cd client
-python sniffer.py
+python sniffer.py -i 1 --send    # Sniff interface #1 and upload
 ```
 
 **Linux**:
 ```bash
 cd client
-sudo python sniffer.py
+sudo python sniffer.py -i 1 --send
 ```
+
+> **Note:** The `--send` flag starts the sender in the background. You can also run `sniffer.py` and `sender.py` separately in two terminals.
 
 ## Configuration
 
-### Sniffer Batch Settings
+### Sniffer Settings
 
-Edit `client/sniffer.py`:
-
-```python
-BATCH_SIZE = 100        # Send after 100 packets
-BATCH_TIMEOUT = 30      # Or send after 30 seconds
-MAX_RETRIES = 3         # Retry failed uploads 3 times
-RETRY_DELAY = 5         # Wait 5 seconds between retries
+```bash
+# Command-line options
+python sniffer.py --help
+python sniffer.py -i 1 -s 5 -b 50000 --send
 ```
 
-### Aggregator Settings
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-i` / `--interfaces` | Interactive | Interface selection (1, 1,2,3, or all) |
+| `-s` / `--save-interval` | 5 seconds | JSON save frequency |
+| `-b` / `--buffer-size` | 50000 | Max packets before forced save |
+| `--send` | Off | Also run sender in background |
 
-Edit `server/aggregator.py`:
+### Server Settings
 
-```python
-await asyncio.sleep(30)  # Aggregate every 30 seconds (line 138)
-timedelta(days=7)        # Keep raw packets for 7 days (line 150)
-```
+Aggregation is handled automatically by `main.py` on packet ingestion.
 
 ## Features
 
@@ -133,18 +135,19 @@ timedelta(days=7)        # Keep raw packets for 7 days (line 150)
 
 ### 3. Dual Storage
 - **raw_packets**: Complete packet logs for audit/forensics
-- **traffic_data**: Aggregated flows with ML predictions
+- **aggregated_features**: Multi-window ML features (5s/30s/180s)
+- **detected_alerts**: Security alerts with severity tracking
 
-### 4. Server-Side Aggregation
-- Automatic flow aggregation every 30 seconds
-- ML predictions on aggregated data
-- Automatic cleanup of old raw packets
+### 4. Integrated Aggregation
+- Automatic multi-window aggregation (5s, 30s, 3min) on ingestion
+- XGBoost ML predictions in background thread
+- Severity-based alert generation
 
 ## API Endpoints
 
 ### Client → Server
 
-- `POST /ingest_packets`: Receive batch of raw packets
+- `POST /ingest`: Receive batch of raw packets
   ```json
   [
     {
@@ -165,9 +168,12 @@ timedelta(days=7)        # Keep raw packets for 7 days (line 150)
 
 ### JSON API
 
-- `GET /api/last10`: Last 10 flows (JSON)
-- `GET /api/alltraffic`: All flows (JSON)
-- `GET /api/raw_packets/last/{count}`: Last N raw packets (JSON)
+- `GET /api/features?window_size=N`: Aggregated features (5/30/180)
+- `GET /api/alerts`: Security alerts
+- `GET /api/protocols`: Protocol distribution
+- `GET /api/top-sources`: Top source IPs
+- `GET /api/top-destinations`: Top destination IPs
+- `GET /api/top-ports`: Top destination ports
 - `GET /health`: Health check
 
 ## Troubleshooting
@@ -220,14 +226,11 @@ tail -f server/logs/server.log
 # Check raw packet count
 psql -U postgres -d Traffic_Analyzer -c "SELECT COUNT(*) FROM raw_packets;"
 
-# Check aggregated flow count
-psql -U postgres -d Traffic_Analyzer -c "SELECT COUNT(*) FROM traffic_data;"
-```
+# Check aggregated features (by window size)
+psql -U postgres -d Traffic_Analyzer -c "SELECT window_size, COUNT(*) FROM aggregated_features GROUP BY window_size;"
 
-### Check Aggregator Status
-```bash
-# View aggregator logs
-tail -f server/logs/aggregator.log
+# Check detected alerts
+psql -U postgres -d Traffic_Analyzer -c "SELECT COUNT(*) FROM detected_alerts;"
 ```
 
 ## Performance Tuning
