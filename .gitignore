@@ -1,15 +1,25 @@
-__pycache__/ 
-*.csv 
-*.log 
-dist/ 
-build/ 
-*.spec 
-"server/traffic_analyzer.db" 
-"JSON/" 
-"aggregated_features/" 
-"client/logs/" 
-"client/profile.svg" 
-JSON/ 
-aggregated_features/ 
-client/logs/ 
-client/profile.svg 
+# Python
+__pycache__/
+*.pyc
+
+# Build outputs
+dist/
+build/
+*.spec
+
+# Data files
+*.csv
+*.log
+*.db
+
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
+
+# Project specific
+JSON/
+aggregated_features/
+client/logs/
+client/profile.svg
+
