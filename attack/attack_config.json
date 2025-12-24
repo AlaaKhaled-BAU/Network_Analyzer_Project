@@ -1,0 +1,766 @@
+{
+    "target": "127.0.0.1",
+    "capture_duration": 180,
+    "cooldown_period": 10,
+    "output_directory": "attack_datasets",
+    "attacks": {
+        "syn_flood": {
+            "enabled": false,
+            "variations": [
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "HTTP - Low intensity",
+                    "duration": 5
+                },
+                {
+                    "port": 80,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "HTTP - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 80,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "HTTP - High intensity",
+                    "duration": 180
+                },
+                {
+                    "port": 443,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "HTTPS - Low intensity",
+                    "duration": 5
+                },
+                {
+                    "port": 443,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "HTTPS - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 443,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "HTTPS - High intensity",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "SSH - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 22,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "SSH - High intensity",
+                    "duration": 180
+                },
+                {
+                    "port": 8080,
+                    "intensity": 30,
+                    "delay": 0.005,
+                    "description": "Alt HTTP - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 8080,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "Alt HTTP - High intensity",
+                    "duration": 180
+                },
+                {
+                    "port": 3389,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "RDP - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 3306,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "MySQL - Medium intensity",
+                    "duration": 30
+                }
+            ]
+        },
+        "udp_flood": {
+            "enabled": false,
+            "variations": [
+                {
+                    "port": 53,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "DNS - Low intensity",
+                    "duration": 5
+                },
+                {
+                    "port": 53,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "DNS - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 53,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "DNS - High intensity",
+                    "duration": 180
+                },
+                {
+                    "port": 123,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "NTP - Low intensity",
+                    "duration": 5
+                },
+                {
+                    "port": 123,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "NTP - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 123,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "NTP - High intensity",
+                    "duration": 180
+                },
+                {
+                    "port": 161,
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "SNMP - Low intensity",
+                    "duration": 5
+                },
+                {
+                    "port": 161,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "SNMP - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 1900,
+                    "intensity": 30,
+                    "delay": 0.005,
+                    "description": "SSDP - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 1900,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "SSDP - High intensity",
+                    "duration": 180
+                },
+                {
+                    "port": 5060,
+                    "intensity": 30,
+                    "delay": 0.005,
+                    "description": "SIP - Medium intensity",
+                    "duration": 30
+                },
+                {
+                    "port": 27015,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Gaming - Medium intensity",
+                    "duration": 30
+                }
+            ]
+        },
+        "icmp_flood": {
+            "enabled": false,
+            "variations": [
+                {
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "Low intensity - 10 pps",
+                    "duration": 5
+                },
+                {
+                    "intensity": 20,
+                    "delay": 0.005,
+                    "description": "Low-Medium intensity - 20 pps",
+                    "duration": 5
+                },
+                {
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Medium intensity - 50 pps",
+                    "duration": 30
+                },
+                {
+                    "intensity": 75,
+                    "delay": 0.002,
+                    "description": "Medium-High intensity - 75 pps",
+                    "duration": 30
+                },
+                {
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High intensity - 100 pps",
+                    "duration": 180
+                },
+                {
+                    "intensity": 150,
+                    "delay": 0.0005,
+                    "description": "Very High intensity - 150 pps",
+                    "duration": 180
+                },
+                {
+                    "intensity": 200,
+                    "delay": 0.0005,
+                    "description": "Extreme intensity - 200 pps",
+                    "duration": 180
+                }
+            ]
+        },
+        "port_scan": {
+            "enabled": true,
+            "variations": [
+                {
+                    "ports": "22,80,443",
+                    "delay": 0.5,
+                    "description": "Common 3 ports - Slow scan",
+                    "duration": 5
+                },
+                {
+                    "ports": "22,80,443",
+                    "delay": 0.1,
+                    "description": "Common 3 ports - Fast scan",
+                    "duration": 180
+                },
+                {
+                    "ports": "20,21,22,23,25,53,80,110,143,443",
+                    "delay": 0.5,
+                    "description": "Top 10 ports - Slow scan",
+                    "duration": 5
+                },
+                {
+                    "ports": "20,21,22,23,25,53,80,110,143,443",
+                    "delay": 0.2,
+                    "description": "Top 10 ports - Medium scan",
+                    "duration": 30
+                },
+                {
+                    "ports": "20,21,22,23,25,53,80,110,143,443",
+                    "delay": 0.05,
+                    "description": "Top 10 ports - Fast scan",
+                    "duration": 180
+                },
+                {
+                    "ports": "80,443,8080,8443,3000,5000,8000,9090",
+                    "delay": 0.3,
+                    "description": "Web services - Medium scan",
+                    "duration": 30
+                },
+                {
+                    "ports": "3306,5432,27017,6379,9200,1433,5984",
+                    "delay": 0.3,
+                    "description": "Database ports - Medium scan",
+                    "duration": 30
+                },
+                {
+                    "ports": "22,23,3389,5900,5901",
+                    "delay": 0.3,
+                    "description": "Remote access - Medium scan",
+                    "duration": 30
+                },
+                {
+                    "ports": "1-50",
+                    "delay": 0.2,
+                    "description": "Range 1-50 - Medium scan",
+                    "duration": 30
+                },
+                {
+                    "ports": "1-100",
+                    "delay": 0.1,
+                    "description": "Range 1-100 - Fast scan",
+                    "duration": 180
+                },
+                {
+                    "ports": "1-100",
+                    "delay": 0.05,
+                    "description": "Range 1-100 - Aggressive scan",
+                    "duration": 180
+                },
+                {
+                    "ports": "100-200",
+                    "delay": 0.1,
+                    "description": "Range 100-200 - Fast scan",
+                    "duration": 180
+                },
+                {
+                    "ports": "1-500",
+                    "delay": 0.05,
+                    "description": "Range 1-500 - Aggressive scan",
+                    "duration": 180
+                },
+                {
+                    "ports": "1-1024",
+                    "delay": 0.1,
+                    "description": "All privileged ports - Medium scan",
+                    "duration": 30
+                },
+                {
+                    "ports": "1-1024",
+                    "delay": 0.05,
+                    "description": "All privileged ports - Fast scan",
+                    "duration": 180
+                },
+                {
+                    "ports": "1-1024",
+                    "delay": 0.02,
+                    "description": "All privileged ports - Aggressive scan",
+                    "duration": 180
+                }
+            ]
+        },
+        "dns_tunnel": {
+            "enabled": true,
+            "variations": [
+                {
+                    "dns_server": "8.26.56.26",
+                    "qps": 1,
+                    "description": "Comodo DNS - Very slow (1 qps)",
+                    "duration": 5,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "8.26.56.26",
+                    "qps": 5,
+                    "description": "Comodo DNS - Slow (5 qps)",
+                    "duration": 5,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "84.200.69.80",
+                    "qps": 10,
+                    "description": "DNS.Watch - Medium (10 qps)",
+                    "duration": 30,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "84.200.69.80",
+                    "qps": 20,
+                    "description": "DNS.Watch - Fast (20 qps)",
+                    "duration": 180,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "8.8.8.8",
+                    "qps": 2,
+                    "description": "Google DNS - Slow (2 qps)",
+                    "duration": 5,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "8.8.8.8",
+                    "qps": 10,
+                    "description": "Google DNS - Medium (10 qps)",
+                    "duration": 30,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "8.8.8.8",
+                    "qps": 20,
+                    "description": "Google DNS - Fast (20 qps)",
+                    "duration": 180,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "1.1.1.1",
+                    "qps": 5,
+                    "description": "Cloudflare DNS - Slow (5 qps)",
+                    "duration": 5,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "1.1.1.1",
+                    "qps": 15,
+                    "description": "Cloudflare DNS - Medium (15 qps)",
+                    "duration": 30,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "1.1.1.1",
+                    "qps": 30,
+                    "description": "Cloudflare DNS - Fast (30 qps)",
+                    "duration": 180,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "9.9.9.9",
+                    "qps": 10,
+                    "description": "Quad9 DNS - Medium (10 qps)",
+                    "duration": 30,
+                    "mirror_to": "26.178.118.134"
+                },
+                {
+                    "dns_server": "208.67.222.222",
+                    "qps": 15,
+                    "description": "OpenDNS - Medium (15 qps)",
+                    "duration": 30,
+                    "mirror_to": "26.178.118.134"
+                }
+            ]
+        },
+        "arp_spoof": {
+            "enabled": true,
+            "variations": [
+                {
+                    "fake_mac": "aa:bb:cc:dd:ee:ff",
+                    "fake_mac2": "11:22:33:44:55:66",
+                    "intensity": 20,
+                    "mac_switch_delay": 0,
+                    "duration": 5,
+                    "description": "5s Window - Rapid MAC flapping"
+                },
+                {
+                    "fake_mac": "aa:bb:cc:dd:ee:ff",
+                    "fake_mac2": "ff:ee:dd:cc:bb:aa",
+                    "intensity": 15,
+                    "mac_switch_delay": 0,
+                    "duration": 5,
+                    "description": "5s Window - High intensity flapping"
+                },
+                {
+                    "fake_mac": "de:ad:be:ef:00:01",
+                    "fake_mac2": "de:ad:be:ef:00:02",
+                    "intensity": 10,
+                    "mac_switch_delay": 5,
+                    "duration": 30,
+                    "description": "30s Window - Switch every 5s"
+                },
+                {
+                    "fake_mac": "ca:fe:ba:be:00:01",
+                    "fake_mac2": "ca:fe:ba:be:00:02",
+                    "intensity": 10,
+                    "mac_switch_delay": 10,
+                    "duration": 30,
+                    "description": "30s Window - Switch every 10s"
+                },
+                {
+                    "fake_mac": "ba:ad:f0:0d:00:01",
+                    "fake_mac2": "ba:ad:f0:0d:00:02",
+                    "intensity": 8,
+                    "mac_switch_delay": 15,
+                    "duration": 30,
+                    "description": "30s Window - Switch every 15s"
+                },
+                {
+                    "fake_mac": "00:11:22:33:44:55",
+                    "fake_mac2": "55:44:33:22:11:00",
+                    "intensity": 5,
+                    "mac_switch_delay": 30,
+                    "duration": 180,
+                    "description": "3min Window - Switch every 30s"
+                },
+                {
+                    "fake_mac": "ab:cd:ef:12:34:56",
+                    "fake_mac2": "65:43:21:fe:dc:ba",
+                    "intensity": 5,
+                    "mac_switch_delay": 45,
+                    "duration": 180,
+                    "description": "3min Window - Switch every 45s"
+                },
+                {
+                    "fake_mac": "fe:dc:ba:98:76:54",
+                    "fake_mac2": "45:67:89:ab:cd:ef",
+                    "intensity": 3,
+                    "mac_switch_delay": 60,
+                    "duration": 180,
+                    "description": "3min Window - Switch every 60s"
+                }
+            ]
+        },
+        "ssh_brute_force": {
+            "enabled": false,
+            "variations": [
+                {
+                    "port": 22,
+                    "users": [
+                        "admin"
+                    ],
+                    "passwords": [
+                        "password"
+                    ],
+                    "delay": 2.0,
+                    "description": "Single user/pass - Very slow",
+                    "duration": 5
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456"
+                    ],
+                    "delay": 1.5,
+                    "description": "Single user, 2 passwords - Slow",
+                    "duration": 5
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456"
+                    ],
+                    "delay": 1.0,
+                    "description": "2 users, 2 passwords - Medium",
+                    "duration": 30
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin"
+                    ],
+                    "delay": 1.0,
+                    "description": "2 users, 3 passwords - Medium",
+                    "duration": 30
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root",
+                        "user"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin"
+                    ],
+                    "delay": 0.8,
+                    "description": "3 users, 3 passwords - Medium-Fast",
+                    "duration": 30
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root",
+                        "user"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin",
+                        "root"
+                    ],
+                    "delay": 0.5,
+                    "description": "3 users, 4 passwords - Fast",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root",
+                        "user",
+                        "test"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin",
+                        "test"
+                    ],
+                    "delay": 0.5,
+                    "description": "4 users, 4 passwords - Fast",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root",
+                        "user",
+                        "test",
+                        "guest"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin",
+                        "test",
+                        "guest"
+                    ],
+                    "delay": 0.3,
+                    "description": "5 users, 5 passwords - Very Fast",
+                    "duration": 180
+                },
+                {
+                    "port": 2222,
+                    "users": [
+                        "admin",
+                        "root"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456"
+                    ],
+                    "delay": 1.0,
+                    "description": "Alt SSH port 2222 - Medium",
+                    "duration": 30
+                },
+                {
+                    "port": 2222,
+                    "users": [
+                        "admin",
+                        "root",
+                        "user"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin"
+                    ],
+                    "delay": 0.5,
+                    "description": "Alt SSH port 2222 - Fast",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin",
+                        "root",
+                        "test",
+                        "guest",
+                        "user"
+                    ],
+                    "delay": 0.8,
+                    "description": "Single user, 7 passwords - Medium",
+                    "duration": 30
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root",
+                        "user",
+                        "test",
+                        "guest",
+                        "operator"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin"
+                    ],
+                    "delay": 0.4,
+                    "description": "6 users, 3 passwords - Fast",
+                    "duration": 180
+                }
+            ]
+        },
+        "slowloris": {
+            "enabled": false,
+            "variations": [
+                {
+                    "port": 80,
+                    "connections": 50,
+                    "description": "HTTP - 50 connections",
+                    "duration": 5
+                },
+                {
+                    "port": 80,
+                    "connections": 100,
+                    "description": "HTTP - 100 connections",
+                    "duration": 30
+                },
+                {
+                    "port": 80,
+                    "connections": 200,
+                    "description": "HTTP - 200 connections",
+                    "duration": 180
+                },
+                {
+                    "port": 80,
+                    "connections": 300,
+                    "description": "HTTP - 300 connections",
+                    "duration": 180
+                },
+                {
+                    "port": 443,
+                    "connections": 50,
+                    "description": "HTTPS - 50 connections",
+                    "duration": 5
+                },
+                {
+                    "port": 443,
+                    "connections": 100,
+                    "description": "HTTPS - 100 connections",
+                    "duration": 30
+                },
+                {
+                    "port": 443,
+                    "connections": 200,
+                    "description": "HTTPS - 200 connections",
+                    "duration": 180
+                },
+                {
+                    "port": 8080,
+                    "connections": 75,
+                    "description": "Alt HTTP - 75 connections",
+                    "duration": 30
+                },
+                {
+                    "port": 8080,
+                    "connections": 150,
+                    "description": "Alt HTTP - 150 connections",
+                    "duration": 30
+                },
+                {
+                    "port": 8080,
+                    "connections": 250,
+                    "description": "Alt HTTP - 250 connections",
+                    "duration": 180
+                },
+                {
+                    "port": 8443,
+                    "connections": 100,
+                    "description": "Alt HTTPS - 100 connections",
+                    "duration": 30
+                },
+                {
+                    "port": 3000,
+                    "connections": 100,
+                    "description": "Dev server - 100 connections",
+                    "duration": 30
+                }
+            ]
+        }
+    }
+}

@@ -1,0 +1,119 @@
+{
+    "target": "127.0.0.1",
+    "capture_duration": 60,
+    "cooldown_period": 5,
+    "output_directory": "attack_datasets",
+    "attacks": {
+        "syn_flood": {
+            "enabled": true,
+            "variations": [
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "HTTP low"
+                },
+                {
+                    "port": 443,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "HTTPS medium"
+                }
+            ]
+        },
+        "udp_flood": {
+            "enabled": true,
+            "variations": [
+                {
+                    "port": 53,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "DNS low"
+                },
+                {
+                    "port": 123,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "NTP medium"
+                }
+            ]
+        },
+        "icmp_flood": {
+            "enabled": true,
+            "variations": [
+                {
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "Low"
+                },
+                {
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High"
+                }
+            ]
+        },
+        "port_scan": {
+            "enabled": true,
+            "variations": [
+                {
+                    "ports": "22,80,443",
+                    "delay": 0.3,
+                    "description": "Common ports"
+                },
+                {
+                    "ports": "1-100",
+                    "delay": 0.1,
+                    "description": "Range 1-100"
+                }
+            ]
+        },
+        "dns_tunnel": {
+            "enabled": false,
+            "variations": [
+                {
+                    "domain": "tunnel.example.com",
+                    "qps": 5,
+                    "description": "Basic tunnel"
+                }
+            ]
+        },
+        "arp_spoof": {
+            "enabled": false,
+            "variations": [
+                {
+                    "target_ip": "127.0.0.1",
+                    "fake_mac": "aa:bb:cc:dd:ee:ff",
+                    "intensity": 10
+                }
+            ]
+        },
+        "ssh_brute_force": {
+            "enabled": false,
+            "variations": [
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456"
+                    ],
+                    "delay": 1.0
+                }
+            ]
+        },
+        "slowloris": {
+            "enabled": false,
+            "variations": [
+                {
+                    "port": 80,
+                    "connections": 100,
+                    "description": "HTTP 100 conn"
+                }
+            ]
+        }
+    }
+}
