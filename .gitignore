@@ -13,3 +13,4 @@ JSON/
 aggregated_features/ 
 client/logs/ 
 client/profile.svg 
+.env

@@ -5,9 +5,16 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- Bot configuration ---
-TOKEN = "8423302155:AAGUQx34_fPFWrYbrTaRCYIQFYydm8lmjlw"
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    messagebox.showerror("Error", "TELEGRAM_BOT_TOKEN not found in .env file!")
+    exit(1)
 URL_SEND = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 WEBHOOK_PORT = 5000  # Local server port
 CHAT_IDS_FILE = "chat_ids.json"
