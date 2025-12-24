@@ -32,6 +32,10 @@ import os
 from pathlib import Path
 from typing import List, Dict, Optional
 import uvicorn
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 # ========== CONFIGURATION ==========
 logging.basicConfig(
@@ -49,8 +53,10 @@ TEMPLATES_DIR = SERVER_ROOT / "templates"
 STATIC_DIR = SERVER_ROOT / "static"
 DASHBOARD_FILE = TEMPLATES_DIR / "netguardian_tailwind.html"
 
-# Database - PostgreSQL
-DATABASE_URL = "postgresql://postgres:987456@localhost:5432/NetGuardian Pro"
+# Database - PostgreSQL (loaded from .env)
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/NetGuardian Pro")
+if "password" in DATABASE_URL:
+    logger.warning("⚠️ DATABASE_URL not found in .env file! Using default (insecure) connection.")
 
 # ML Model files (from server/models/)
 XGB_MODEL_PATH = MODEL_DIR / "xgb_model.pkl"
