@@ -1,16 +1,29 @@
 """
 Attack Runner GUI - Easy interface for launching attacks
 With checkbox selection for variations!
+
+THEMED VERSION: Dark Red theme (Red Team concept)
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, scrolledtext
 import threading
 import os
 import sys
 import json
 import time
 from datetime import datetime
+
+# Theme Colors (Red Team - Dark Red theme)
+BG_COLOR = "#1a1a1a"
+CARD_BG = "#2d2020"
+ACCENT_COLOR = "#cc2222"
+ACCENT_HOVER = "#aa1111"
+SUCCESS_COLOR = "#66bb6a"
+ERROR_COLOR = "#cc4444"
+WARNING_COLOR = "#dd9933"
+TEXT_COLOR = "#e8e8e8"
+MUTED_COLOR = "#888888"
 
 
 class CheckboxTreeview(ttk.Treeview):
@@ -92,11 +105,19 @@ class CheckboxTreeview(ttk.Treeview):
         
         # Update the text prefix
         current_text = self.item(item, 'text')
-        if current_text.startswith(('☑ ', '☐ ', '📁 ')):
-            current_text = current_text[2:]
+        # Remove any existing prefixes
+        if current_text.startswith(('☑ 📁 ', '☐ 📁 ', '☑ ', '☐ ', '📁 ')):
+            if '📁' in current_text[:5]:
+                current_text = current_text.split('📁 ', 1)[-1]
+            else:
+                current_text = current_text[2:]
         
         if 'parent' in base_tags:
-            prefix = '📁 '
+            # Parent folders get checkbox + folder icon
+            if item in self.checked:
+                prefix = '☑ 📁 '
+            else:
+                prefix = '☐ 📁 '
         elif item in self.checked:
             prefix = '☑ '
         else:
@@ -131,19 +152,83 @@ class CheckboxTreeview(ttk.Treeview):
 class AttackRunnerGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Attack Runner - Attacker Machine")
-        self.root.geometry("750x800")
-        self.root.resizable(True, True)
+        self.root.title("Attack Runner")
+        
+        # Position window (left half by default)
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        window_width = screen_width // 2
+        window_height = screen_height - 80
+        x_position = 0
+        y_position = 0
+        self.root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
+        self.root.minsize(800, 700)
+        
+        # Apply dark theme
+        self.root.configure(bg=BG_COLOR)
         
         self.is_running = False
         self.config = self.load_config()
         self.interfaces = []
         self.variation_map = {}  # item_id -> (attack_type, index, variation)
         
+        self.setup_styles()
         self.setup_ui()
         self.load_interfaces()
         self.populate_attacks()
         self.update_time_estimate()
+    
+    def setup_styles(self):
+        """Configure ttk styles for red team theme"""
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        
+        # Frame styles
+        style.configure("TFrame", background=BG_COLOR)
+        style.configure("Card.TFrame", background=CARD_BG)
+        
+        # Label styles
+        style.configure("TLabel", background=BG_COLOR, foreground=TEXT_COLOR, font=("Segoe UI", 10))
+        style.configure("Header.TLabel", font=("Segoe UI", 18, "bold"), foreground=ACCENT_COLOR, background=BG_COLOR)
+        style.configure("Status.TLabel", font=("Segoe UI", 12, "bold"), background=BG_COLOR)
+        style.configure("Card.TLabel", background=CARD_BG, foreground=TEXT_COLOR, font=("Segoe UI", 10))
+        style.configure("Muted.TLabel", background=CARD_BG, foreground=MUTED_COLOR, font=("Segoe UI", 8))
+        
+        # LabelFrame styles  
+        style.configure("Card.TLabelframe", background=CARD_BG, relief="flat", borderwidth=2)
+        style.configure("Card.TLabelframe.Label", font=("Segoe UI", 11, "bold"), foreground=ACCENT_COLOR, background=CARD_BG)
+        
+        # Button styles
+        style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"), background=ACCENT_COLOR, foreground="#ffffff", borderwidth=0, padding=[12, 8])
+        style.map("Accent.TButton", background=[("active", ACCENT_HOVER)])
+        
+        style.configure("Stop.TButton", font=("Segoe UI", 11, "bold"), background="#cc3333", foreground="#ffffff", borderwidth=0, padding=[14, 8])
+        style.map("Stop.TButton", background=[("active", "#aa2222")])
+        
+        style.configure("Small.TButton", font=("Segoe UI", 9), background=CARD_BG, foreground=TEXT_COLOR, borderwidth=1, padding=[8, 4])
+        style.map("Small.TButton", background=[("active", "#3d3030")])
+        
+        # Entry and Combobox styles - ensure same dark background
+        style.configure("TEntry", fieldbackground="#2d2020", foreground=TEXT_COLOR, borderwidth=1, insertcolor=TEXT_COLOR)
+        style.configure("TCombobox", fieldbackground="#2d2020", foreground=TEXT_COLOR, borderwidth=1, selectbackground=ACCENT_COLOR, selectforeground="#ffffff")
+        style.map("TCombobox", fieldbackground=[("readonly", "#2d2020")], selectbackground=[("readonly", ACCENT_COLOR)])
+        
+        # Treeview styles
+        style.configure("Treeview", 
+                       background=CARD_BG, 
+                       foreground=TEXT_COLOR, 
+                       fieldbackground=CARD_BG,
+                       font=("Segoe UI", 9))
+        style.configure("Treeview.Heading", 
+                       background=ACCENT_COLOR, 
+                       foreground="#ffffff", 
+                       font=("Segoe UI", 9, "bold"))
+        style.map("Treeview", background=[("selected", ACCENT_COLOR)])
+        
+        # Progressbar styles
+        style.configure("red.Horizontal.TProgressbar", 
+                       background=ACCENT_COLOR, 
+                       troughcolor=CARD_BG)
     
     def load_config(self):
         """Load attack configuration"""
@@ -185,65 +270,85 @@ class AttackRunnerGUI:
         }
     
     def setup_ui(self):
-        main_frame = ttk.Frame(self.root, padding="15")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # ==========================================
+        # HEADER
+        # ==========================================
+        header = ttk.Frame(self.root, padding=(16, 12))
+        header.pack(fill="x")
         
-        # Title
-        title = ttk.Label(main_frame, text="⚔️ Attack Runner", 
-                         font=('Segoe UI', 16, 'bold'))
-        title.pack(pady=(0, 15))
+        # Title with crossed swords emoji
+        ttk.Label(header, text="⚔️ Attack Runner", style="Header.TLabel").pack(side="left")
         
-        # Network Configuration
-        net_frame = ttk.LabelFrame(main_frame, text="Network Configuration", padding="10")
-        net_frame.pack(fill=tk.X, pady=(0, 10))
+        # Status indicator
+        self.status_label = ttk.Label(header, text="🟢 Ready", style="Status.TLabel", foreground=SUCCESS_COLOR)
+        self.status_label.pack(side="left", padx=20)
         
-        row1 = ttk.Frame(net_frame)
-        row1.pack(fill=tk.X, pady=2)
-        ttk.Label(row1, text="Interface:", width=12).pack(side=tk.LEFT)
-        self.interface_combo = ttk.Combobox(row1, width=45, state='readonly')
-        self.interface_combo.pack(side=tk.LEFT, padx=5)
-        ttk.Button(row1, text="↻", width=3, command=self.load_interfaces).pack(side=tk.LEFT)
+        # Stop button
+        self.stop_btn = ttk.Button(header, text="🛑 STOP", command=self.stop_attacks, style="Stop.TButton", state=tk.DISABLED)
+        self.stop_btn.pack(side="right", padx=8)
         
-        row2 = ttk.Frame(net_frame)
-        row2.pack(fill=tk.X, pady=2)
-        ttk.Label(row2, text="Target IP:", width=12).pack(side=tk.LEFT)
-        self.target_ip = ttk.Entry(row2, width=47)
-        self.target_ip.pack(side=tk.LEFT, padx=5)
+        # ==========================================
+        # MAIN CONTENT (Two columns)
+        # ==========================================
+        content = ttk.Frame(self.root, padding=16)
+        content.pack(fill="both", expand=True)
+        
+        # LEFT COLUMN - Configuration
+        left = ttk.Frame(content)
+        left.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        
+        # Network Configuration Card
+        net_card = ttk.LabelFrame(left, text="🌐 Network Configuration", style="Card.TLabelframe", padding=12)
+        net_card.pack(fill="x", pady=(0, 10))
+        
+        net_grid = ttk.Frame(net_card, style="Card.TFrame")
+        net_grid.pack(fill="x")
+        
+        # Interface - use white color for visibility
+        ttk.Label(net_grid, text="Interface:", style="Card.TLabel", foreground="#ffffff").grid(row=0, column=0, sticky="w", pady=4)
+        iface_frame = ttk.Frame(net_grid, style="Card.TFrame")
+        iface_frame.grid(row=0, column=1, sticky="w", pady=4, padx=(8, 0))
+        self.interface_combo = ttk.Combobox(iface_frame, width=35, state='readonly')
+        self.interface_combo.pack(side="left")
+        ttk.Button(iface_frame, text="↻", width=3, command=self.load_interfaces, style="Small.TButton").pack(side="left", padx=(4, 0))
+        
+        # Target IP
+        ttk.Label(net_grid, text="Target IP:", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=4)
+        self.target_ip = ttk.Entry(net_grid, width=25, font=("Consolas", 10))
+        self.target_ip.grid(row=1, column=1, sticky="w", pady=4, padx=(8, 0))
         self.target_ip.insert(0, "26.0.0.0")
         
-        row3 = ttk.Frame(net_frame)
-        row3.pack(fill=tk.X, pady=2)
-        ttk.Label(row3, text="Duration (s):", width=12).pack(side=tk.LEFT)
+        # Duration
+        ttk.Label(net_grid, text="Duration (s):", style="Card.TLabel").grid(row=2, column=0, sticky="w", pady=4)
         self.duration_var = tk.StringVar(value=str(self.config.get('capture_duration', 180)))
-        self.duration_entry = ttk.Entry(row3, width=10, textvariable=self.duration_var)
-        self.duration_entry.pack(side=tk.LEFT, padx=5)
+        self.duration_entry = ttk.Entry(net_grid, width=12, textvariable=self.duration_var, font=("Consolas", 10))
+        self.duration_entry.grid(row=2, column=1, sticky="w", pady=4, padx=(8, 0))
         self.duration_var.trace('w', lambda *args: self.update_time_estimate())
         
-        # Target MAC for ARP spoof
-        row4 = ttk.Frame(net_frame)
-        row4.pack(fill=tk.X, pady=2)
-        ttk.Label(row4, text="Target MAC:", width=12).pack(side=tk.LEFT)
-        self.target_mac = ttk.Entry(row4, width=20)
-        self.target_mac.pack(side=tk.LEFT, padx=5)
+        # Target MAC
+        ttk.Label(net_grid, text="Target MAC:", style="Card.TLabel").grid(row=3, column=0, sticky="w", pady=4)
+        mac_frame = ttk.Frame(net_grid, style="Card.TFrame")
+        mac_frame.grid(row=3, column=1, sticky="w", pady=4, padx=(8, 0))
+        self.target_mac = ttk.Entry(mac_frame, width=18, font=("Consolas", 10))
+        self.target_mac.pack(side="left")
         self.target_mac.insert(0, "ff:ff:ff:ff:ff:ff")
-        ttk.Label(row4, text="(for ARP spoof - broadcast or target's MAC)", 
-                 font=('Segoe UI', 8), foreground='gray').pack(side=tk.LEFT, padx=5)
+        ttk.Label(mac_frame, text="(ARP spoof)", style="Muted.TLabel").pack(side="left", padx=(6, 0))
         
-        # Attack Selection
-        attack_frame = ttk.LabelFrame(main_frame, text="Select Attack Variations (Click to toggle)", padding="10")
-        attack_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        # Attack Selection Card
+        attack_card = ttk.LabelFrame(left, text="🎯 Attack Variations (Click to toggle)", style="Card.TLabelframe", padding=12)
+        attack_card.pack(fill="both", expand=True, pady=(0, 10))
         
-        tree_frame = ttk.Frame(attack_frame)
-        tree_frame.pack(fill=tk.BOTH, expand=True)
+        tree_frame = ttk.Frame(attack_card, style="Card.TFrame")
+        tree_frame.pack(fill="both", expand=True)
         
         self.tree = CheckboxTreeview(tree_frame, columns=('description', 'params'), 
                                       show='tree headings', selectmode='none')
         self.tree.heading('#0', text='Attack / Variation')
         self.tree.heading('description', text='Description')
         self.tree.heading('params', text='Parameters')
-        self.tree.column('#0', width=220)
-        self.tree.column('description', width=180)
-        self.tree.column('params', width=250)
+        self.tree.column('#0', width=180)
+        self.tree.column('description', width=150)
+        self.tree.column('params', width=200)
         
         scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -252,56 +357,88 @@ class AttackRunnerGUI:
         
         self.tree.bind('<<CheckChanged>>', lambda e: self.update_time_estimate())
         
-        btn_row = ttk.Frame(attack_frame)
+        # Tree control buttons
+        btn_row = ttk.Frame(attack_card, style="Card.TFrame")
         btn_row.pack(fill=tk.X, pady=(10, 0))
-        ttk.Button(btn_row, text="✓ Select All", command=self.tree.check_all).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_row, text="✗ Select None", command=self.tree.uncheck_all).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_row, text="▼ Expand All", command=self.expand_all).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_row, text="▲ Collapse All", command=self.collapse_all).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_row, text="✓ Select All", command=self.tree.check_all, style="Small.TButton", width=10).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="✗ Select None", command=self.tree.uncheck_all, style="Small.TButton", width=11).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="▼ Expand All", command=self.expand_all, style="Small.TButton", width=11).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="▲ Collapse All", command=self.collapse_all, style="Small.TButton", width=11).pack(side=tk.LEFT, padx=4)
         
-        # Time Estimate
-        time_frame = ttk.LabelFrame(main_frame, text="Time Estimate", padding="10")
-        time_frame.pack(fill=tk.X, pady=(0, 10))
+        # RIGHT COLUMN - Status & Log
+        right = ttk.Frame(content)
+        right.pack(side="right", fill="both", expand=True, padx=(8, 0))
         
-        self.time_label = ttk.Label(time_frame, text="Selected: 0 variations", 
-                                    font=('Segoe UI', 11))
-        self.time_label.pack(side=tk.LEFT)
+        # Time Estimate Card
+        time_card = ttk.LabelFrame(right, text="⏱ Time Estimate", style="Card.TLabelframe", padding=12)
+        time_card.pack(fill="x", pady=(0, 10))
         
-        self.estimate_label = ttk.Label(time_frame, text="≈ 0 min 0 sec", 
-                                        font=('Segoe UI', 11, 'bold'))
-        self.estimate_label.pack(side=tk.RIGHT)
+        time_inner = ttk.Frame(time_card, style="Card.TFrame")
+        time_inner.pack(fill="x")
         
-        # Status
-        status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
-        status_frame.pack(fill=tk.X, pady=(0, 10))
+        self.time_label = ttk.Label(time_inner, text="Selected: 0 variations", style="Card.TLabel", font=("Segoe UI", 11))
+        self.time_label.pack(side="left")
         
-        self.status_label = ttk.Label(status_frame, text="⏹ Ready", 
-                                      font=('Segoe UI', 11, 'bold'), foreground='gray')
-        self.status_label.pack(side=tk.LEFT)
+        self.estimate_label = ttk.Label(time_inner, text="≈ 0 min 0 sec", style="Card.TLabel", font=("Segoe UI", 11, "bold"), foreground=ACCENT_COLOR)
+        self.estimate_label.pack(side="right")
         
-        self.progress_label = ttk.Label(status_frame, text="")
-        self.progress_label.pack(side=tk.RIGHT)
+        # Status Card
+        status_card = ttk.LabelFrame(right, text="📊 Progress", style="Card.TLabelframe", padding=12)
+        status_card.pack(fill="x", pady=(0, 10))
         
-        self.progress = ttk.Progressbar(status_frame, length=300, mode='determinate')
-        self.progress.pack(fill=tk.X, pady=(5, 0))
+        self.progress_label = ttk.Label(status_card, text="Ready to attack", style="Card.TLabel")
+        self.progress_label.pack(anchor="w")
         
-        # Control Buttons
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X)
+        self.progress = ttk.Progressbar(status_card, length=300, mode='determinate', style="red.Horizontal.TProgressbar")
+        self.progress.pack(fill=tk.X, pady=(8, 0))
         
-        self.start_btn = ttk.Button(btn_frame, text="▶ START ATTACKS", command=self.start_attacks)
-        self.start_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
+        # Start Button
+        self.start_btn = ttk.Button(right, text="▶ LAUNCH ATTACKS", command=self.start_attacks, style="Accent.TButton")
+        self.start_btn.pack(fill=tk.X, pady=(0, 10))
         
-        self.stop_btn = ttk.Button(btn_frame, text="⏹ STOP", command=self.stop_attacks, state=tk.DISABLED)
-        self.stop_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
+        # Activity Log Card
+        log_card = ttk.LabelFrame(right, text="📋 Activity Log", style="Card.TLabelframe", padding=12)
+        log_card.pack(fill="both", expand=True)
         
-        # Log
-        log_frame = ttk.LabelFrame(main_frame, text="Log", padding="5")
-        log_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        self.log_text = scrolledtext.ScrolledText(
+            log_card, 
+            width=40, 
+            height=15, 
+            state=tk.DISABLED, 
+            wrap=tk.WORD,
+            background=BG_COLOR, 
+            foreground=TEXT_COLOR,
+            font=("Consolas", 9),
+            insertbackground=TEXT_COLOR
+        )
+        self.log_text.pack(fill="both", expand=True)
         
-        self.log_text = tk.Text(log_frame, height=5, font=('Consolas', 9),
-                               state=tk.DISABLED, wrap=tk.WORD)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        # Configure log tags
+        self.log_text.tag_config("info", foreground=TEXT_COLOR)
+        self.log_text.tag_config("success", foreground=SUCCESS_COLOR)
+        self.log_text.tag_config("error", foreground=ERROR_COLOR)
+        self.log_text.tag_config("warning", foreground=WARNING_COLOR)
+        
+        # ==========================================
+        # FOOTER
+        # ==========================================
+        footer = ttk.Frame(self.root, padding=(16, 10))
+        footer.pack(fill="x")
+        
+        ttk.Label(footer, text="⚠️ Use only in isolated lab environments", foreground=WARNING_COLOR).pack(side="left")
+        
+        # Clear log button
+        ttk.Button(footer, text="🗑", command=self.clear_log, width=3, style="Small.TButton").pack(side="right", padx=4)
+        
+        # Initial log messages
+        self.log("⚔️ Attack Runner loaded", "success")
+        self.log("⚠️ Run as Administrator for best results", "warning")
+    
+    def clear_log(self):
+        """Clear the activity log"""
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state=tk.DISABLED)
     
     def populate_attacks(self):
         """Populate treeview with attacks and variations"""
@@ -431,10 +568,10 @@ class AttackRunnerGUI:
             self.interface_combo['values'] = ['Default Interface']
             self.interface_combo.current(0)
     
-    def log(self, message):
+    def log(self, message, level="info"):
         self.log_text.configure(state=tk.NORMAL)
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
+        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n", level)
         self.log_text.see(tk.END)
         self.log_text.configure(state=tk.DISABLED)
     
@@ -467,10 +604,10 @@ class AttackRunnerGUI:
         except:
             duration = 180
         
-        self.log(f"Starting {len(selected)} variations on {target}")
+        self.log(f"🚀 Launching {len(selected)} attacks on {target}", "success")
         
         self.is_running = True
-        self.status_label.config(text="🔴 ATTACKING", foreground='red')
+        self.status_label.config(text="🔴 ATTACKING", foreground=ERROR_COLOR)
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         
@@ -502,7 +639,7 @@ class AttackRunnerGUI:
                 # Use per-variation duration if specified, else use global duration
                 var_duration = variation.get('duration', duration)
                 
-                self.root.after(0, lambda l=f"{attack_type}: {desc} ({var_duration}s)": self.log(f"Running: {l}"))
+                self.root.after(0, lambda l=f"{attack_type}: {desc} ({var_duration}s)": self.log(f"⚡ Running: {l}", "warning"))
                 self.root.after(0, lambda l=f"{attack_type}: {desc}": self.progress_label.config(text=l))
                 
                 try:
@@ -530,9 +667,9 @@ class AttackRunnerGUI:
                     if attack_type in attack_funcs:
                         attack_funcs[attack_type]()
                     
-                    self.root.after(0, lambda: self.log(f"✓ Completed"))
+                    self.root.after(0, lambda: self.log(f"✓ Completed", "success"))
                 except Exception as e:
-                    self.root.after(0, lambda e=e: self.log(f"✗ Error: {e}"))
+                    self.root.after(0, lambda e=e: self.log(f"✗ Error: {e}", "error"))
                 
                 progress = int(((i + 1) / total) * 100)
                 self.root.after(0, lambda p=progress: self.progress.configure(value=p))
@@ -542,16 +679,16 @@ class AttackRunnerGUI:
             
             self.root.after(0, self.attacks_completed)
         except Exception as e:
-            self.root.after(0, lambda: self.log(f"FATAL: {e}"))
+            self.root.after(0, lambda: self.log(f"FATAL: {e}", "error"))
             self.root.after(0, self.attacks_completed)
     
     def attacks_completed(self):
         self.is_running = False
-        self.status_label.config(text="✓ Completed", foreground='green')
+        self.status_label.config(text="✓ Completed", foreground=SUCCESS_COLOR)
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
-        self.progress_label.config(text="Done")
-        self.log("All attacks completed!")
+        self.progress_label.config(text="All attacks completed!")
+        self.log("🏁 All attacks completed!", "success")
     
     def stop_attacks(self):
         self.is_running = False
@@ -560,10 +697,10 @@ class AttackRunnerGUI:
             attack_core.stop_event.set()
         except:
             pass
-        self.status_label.config(text="⏹ Stopped", foreground='orange')
+        self.status_label.config(text="⏹ Stopped", foreground=WARNING_COLOR)
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
-        self.log("Stopped by user")
+        self.log("🛑 Stopped by user", "warning")
     
     def on_closing(self):
         if self.is_running:

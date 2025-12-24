@@ -3,10 +3,12 @@ Dataset Capture GUI - Easy interface for packet capture during attack simulation
 
 Self-contained packet capture with CSV export for ML dataset generation.
 Use this tool when simulating attacks to capture labeled traffic.
+
+THEMED VERSION: Matches Network Attack Simulator styling
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, scrolledtext
 import threading
 import os
 import sys
@@ -32,6 +34,15 @@ DNS_TUNNEL_SERVERS = {
     '9.9.9.9',                  # Quad9 DNS
     '208.67.222.222', '208.67.220.220',  # OpenDNS
 }
+
+# Theme Colors (matching Attack Simulator)
+BG_COLOR = "#1e1e2e"
+CARD_BG = "#2b2b3c"
+ACCENT_COLOR = "#89b4fa"
+SUCCESS_COLOR = "#a6e3a1"
+ERROR_COLOR = "#f38ba8"
+WARNING_COLOR = "#fab387"
+TEXT_COLOR = "#cdd6f4"
 
 
 class PacketSniffer:
@@ -323,7 +334,7 @@ class PacketSniffer:
             return True
         except Exception as e:
             if self.callback:
-                self.callback(f"ERROR saving CSV: {e}")
+                self.callback(f"ERROR saving CSV: {e}", "error")
             return False
     
     def should_stop_capture(self):
@@ -338,7 +349,7 @@ class PacketSniffer:
     def sniff_interface(self, interface):
         """Sniff packets on a specific interface"""
         if self.callback:
-            self.callback(f"Started sniffing on: {interface}")
+            self.callback(f"Started sniffing on: {interface}", "info")
         
         def handle_packet(pkt):
             if self.should_stop_capture():
@@ -362,7 +373,7 @@ class PacketSniffer:
                 )
         except Exception as e:
             if self.callback:
-                self.callback(f"Sniffer error on {interface}: {e}")
+                self.callback(f"Sniffer error on {interface}: {e}", "error")
     
     def periodic_saver(self):
         """Periodically save buffer to CSV"""
@@ -382,7 +393,7 @@ class PacketSniffer:
                 filename = os.path.join(self.capture_dir, f"{self.attack_label}_{timestamp}.csv")
                 if self.save_packets_to_csv(packets_to_save, filename):
                     if self.callback:
-                        self.callback(f"Saved {len(packets_to_save)} packets to {os.path.basename(filename)}")
+                        self.callback(f"Saved {len(packets_to_save)} packets to {os.path.basename(filename)}", "success")
     
     def start(self, capture_dir, attack_label, duration, attacker_ip=''):
         """Start packet capture"""
@@ -403,7 +414,7 @@ class PacketSniffer:
         # Get all network interfaces
         interfaces = get_if_list()
         if self.callback:
-            self.callback(f"Detected {len(interfaces)} interfaces")
+            self.callback(f"Detected {len(interfaces)} interfaces", "info")
         
         self.capture_start = datetime.now()
         
@@ -431,7 +442,7 @@ class PacketSniffer:
             filename = os.path.join(self.capture_dir, f"{self.attack_label}_{timestamp}_FINAL.csv")
             if self.save_packets_to_csv(self.packet_buffer, filename):
                 if self.callback:
-                    self.callback(f"FINAL: Saved {len(self.packet_buffer)} packets to {os.path.basename(filename)}")
+                    self.callback(f"FINAL: Saved {len(self.packet_buffer)} packets to {os.path.basename(filename)}", "success")
             self.packet_buffer = []
         
         return self.packet_count
@@ -440,123 +451,207 @@ class PacketSniffer:
 class SnifferGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Dataset Capture - Attack Traffic to CSV")
-        self.root.geometry("550x600")
-        self.root.resizable(False, False)
+        self.root.title("Dataset Capture")
+        
+        # Position window (right half by default, like attack simulator)
+        screen_width = root.winfo_screenwidth()
+        screen_height = root.winfo_screenheight()
+        window_width = screen_width // 2
+        window_height = screen_height - 80
+        x_position = screen_width // 2
+        y_position = 0
+        self.root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
+        self.root.minsize(900, 600)
+        
+        # Apply dark theme
+        self.root.configure(bg=BG_COLOR)
         
         # State
         self.sniffer = None
         self.is_running = False
         self.start_time = None
         
+        self.setup_styles()
         self.setup_ui()
         self.update_timer()
         self.update_packet_count()
     
+    def setup_styles(self):
+        """Configure ttk styles to match Attack Simulator theme"""
+        style = ttk.Style(self.root)
+        style.theme_use("clam")
+        
+        # Frame styles
+        style.configure("TFrame", background=BG_COLOR)
+        style.configure("Card.TFrame", background=CARD_BG)
+        
+        # Label styles
+        style.configure("TLabel", background=BG_COLOR, foreground=TEXT_COLOR, font=("Segoe UI", 10))
+        style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), foreground=ACCENT_COLOR, background=BG_COLOR)
+        style.configure("Status.TLabel", font=("Segoe UI", 12, "bold"), background=BG_COLOR)
+        style.configure("Timer.TLabel", font=("Consolas", 28, "bold"), foreground=TEXT_COLOR, background=CARD_BG)
+        style.configure("Card.TLabel", background=CARD_BG, foreground=TEXT_COLOR, font=("Segoe UI", 10))
+        
+        # LabelFrame styles
+        style.configure("Card.TLabelframe", background=CARD_BG, relief="flat", borderwidth=2)
+        style.configure("Card.TLabelframe.Label", font=("Segoe UI", 11, "bold"), foreground=ACCENT_COLOR, background=CARD_BG)
+        
+        # Button styles
+        style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"), background=ACCENT_COLOR, foreground=BG_COLOR, borderwidth=0, padding=[12, 8])
+        style.map("Accent.TButton", background=[("active", "#74a8e8")])
+        
+        style.configure("Stop.TButton", font=("Segoe UI", 11, "bold"), background=ERROR_COLOR, foreground="#ffffff", borderwidth=0, padding=[14, 8])
+        style.map("Stop.TButton", background=[("active", "#d63031")])
+        
+        style.configure("Small.TButton", font=("Segoe UI", 9), background=ACCENT_COLOR, foreground=BG_COLOR, borderwidth=0, padding=[8, 4])
+        style.map("Small.TButton", background=[("active", "#74a8e8")])
+        
+        # Entry and Combobox styles
+        style.configure("TEntry", fieldbackground=CARD_BG, foreground=TEXT_COLOR, borderwidth=1)
+        style.configure("TCombobox", fieldbackground=CARD_BG, foreground=TEXT_COLOR, borderwidth=1)
+        style.configure("TSpinbox", fieldbackground=CARD_BG, foreground=TEXT_COLOR, borderwidth=1)
+        
+        # Checkbutton styles
+        style.configure("TCheckbutton", background=CARD_BG, foreground=TEXT_COLOR, font=("Segoe UI", 10))
+    
     def setup_ui(self):
-        # Main frame with padding
-        main_frame = ttk.Frame(self.root, padding="20")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # ==========================================
+        # HEADER
+        # ==========================================
+        header = ttk.Frame(self.root, padding=(16, 12))
+        header.pack(fill="x")
         
         # Title
-        title = ttk.Label(main_frame, text="🎯 Dataset Capture Tool", 
-                         font=('Segoe UI', 16, 'bold'))
-        title.pack(pady=(0, 5))
+        ttk.Label(header, text="🎯 Dataset Capture", style="Header.TLabel").pack(side="left")
         
-        subtitle = ttk.Label(main_frame, text="Capture attack traffic and save to CSV for ML training", 
-                            font=('Segoe UI', 10), foreground='gray')
-        subtitle.pack(pady=(0, 15))
+        # Status indicator
+        self.status_label = ttk.Label(header, text="🟢 Ready", style="Status.TLabel", foreground=SUCCESS_COLOR)
+        self.status_label.pack(side="left", padx=20)
         
-        # Configuration Frame
-        config_frame = ttk.LabelFrame(main_frame, text="⚙ Settings", padding="15")
-        config_frame.pack(fill=tk.X, pady=(0, 15))
+        # Stop button (right side)
+        self.stop_btn = ttk.Button(header, text="🛑 STOP", command=self.stop_capture, style="Stop.TButton", state=tk.DISABLED)
+        self.stop_btn.pack(side="right", padx=8)
+        
+        # Open captures folder button
+        ttk.Button(header, text="📁 Captures", command=self.open_captures_folder, style="Accent.TButton").pack(side="right")
+        
+        # ==========================================
+        # MAIN CONTENT (Two-column layout)
+        # ==========================================
+        content = ttk.Frame(self.root, padding=16)
+        content.pack(fill="both", expand=True)
+        
+        # LEFT COLUMN - Settings
+        left = ttk.Frame(content)
+        left.pack(side="left", fill="both", expand=True, padx=(0, 12))
+        
+        # Configuration Card
+        config_card = ttk.LabelFrame(left, text="⚙ Capture Configuration", style="Card.TLabelframe", padding=12)
+        config_card.pack(fill="x", pady=(0, 12))
+        
+        settings_grid = ttk.Frame(config_card, style="Card.TFrame")
+        settings_grid.pack(fill="x")
         
         # Attacker IP
-        ttk.Label(config_frame, text="Attacker IP:", font=('Segoe UI', 10)).grid(
-            row=0, column=0, sticky=tk.W, pady=5)
-        self.attacker_ip = ttk.Entry(config_frame, width=30, font=('Segoe UI', 10))
-        self.attacker_ip.grid(row=0, column=1, pady=5, padx=(10, 0))
+        ttk.Label(settings_grid, text="🎯 Attacker IP:", style="Card.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 6), pady=6)
+        self.attacker_ip = ttk.Entry(settings_grid, width=20, font=("Consolas", 10))
+        self.attacker_ip.grid(row=0, column=1, sticky="w", padx=6, pady=6)
         self.attacker_ip.insert(0, "26.0.0.0")
-        ttk.Label(config_frame, text="(optional)", font=('Segoe UI', 8),
-                 foreground='gray').grid(row=0, column=2, padx=5)
+        ttk.Label(settings_grid, text="(optional)", style="Card.TLabel", foreground="#888").grid(row=0, column=2, padx=5, sticky="w")
         
         # Attack Label
-        ttk.Label(config_frame, text="Attack Label:", font=('Segoe UI', 10)).grid(
-            row=1, column=0, sticky=tk.W, pady=5)
-        self.attack_label = ttk.Combobox(config_frame, width=27, font=('Segoe UI', 10),
+        ttk.Label(settings_grid, text="🏷 Attack Label:", style="Card.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=6)
+        self.attack_label = ttk.Combobox(settings_grid, width=18, font=("Segoe UI", 10),
             values=['syn_flood', 'udp_flood', 'icmp_flood', 'port_scan', 
                    'dns_tunnel', 'arp_spoof', 'ssh_brute', 'slowloris', 'Normal'])
-        self.attack_label.grid(row=1, column=1, pady=5, padx=(10, 0))
+        self.attack_label.grid(row=1, column=1, sticky="w", padx=6, pady=6)
         self.attack_label.set('syn_flood')
         
-        # Capture Duration
-        ttk.Label(config_frame, text="Duration (sec):", font=('Segoe UI', 10)).grid(
-            row=2, column=0, sticky=tk.W, pady=5)
-        self.duration = ttk.Entry(config_frame, width=30, font=('Segoe UI', 10))
-        self.duration.grid(row=2, column=1, pady=5, padx=(10, 0))
+        # Duration
+        ttk.Label(settings_grid, text="⏱ Duration (sec):", style="Card.TLabel").grid(row=2, column=0, sticky="w", padx=(0, 6), pady=6)
+        self.duration = ttk.Entry(settings_grid, width=20, font=("Consolas", 10))
+        self.duration.grid(row=2, column=1, sticky="w", padx=6, pady=6)
         self.duration.insert(0, "300")
         
         # Output Directory
-        ttk.Label(config_frame, text="Output Folder:", font=('Segoe UI', 10)).grid(
-            row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Label(settings_grid, text="📁 Output Folder:", style="Card.TLabel").grid(row=3, column=0, sticky="w", padx=(0, 6), pady=6)
         
-        dir_frame = ttk.Frame(config_frame)
-        dir_frame.grid(row=3, column=1, columnspan=2, pady=5, padx=(10, 0), sticky=tk.W)
+        dir_frame = ttk.Frame(settings_grid, style="Card.TFrame")
+        dir_frame.grid(row=3, column=1, columnspan=2, sticky="w", padx=6, pady=6)
         
-        self.output_dir = ttk.Entry(dir_frame, width=22, font=('Segoe UI', 10))
-        self.output_dir.pack(side=tk.LEFT)
+        self.output_dir = ttk.Entry(dir_frame, width=18, font=("Consolas", 10))
+        self.output_dir.pack(side="left")
         self.output_dir.insert(0, "./captures")
         
-        browse_btn = ttk.Button(dir_frame, text="Browse", width=8, 
-                               command=self.browse_folder)
-        browse_btn.pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(dir_frame, text="Browse", command=self.browse_folder, style="Small.TButton", width=8).pack(side="left", padx=(6, 0))
         
-        # Status Frame
-        status_frame = ttk.LabelFrame(main_frame, text="📊 Status", padding="15")
-        status_frame.pack(fill=tk.X, pady=(0, 15))
+        # Status Card
+        status_card = ttk.LabelFrame(left, text="📊 Capture Status", style="Card.TLabelframe", padding=16)
+        status_card.pack(fill="x", pady=(0, 12))
         
-        # Status indicator
-        self.status_label = ttk.Label(status_frame, text="⏹ Ready", 
-                                      font=('Segoe UI', 12, 'bold'),
-                                      foreground='gray')
-        self.status_label.pack(pady=5)
+        status_inner = ttk.Frame(status_card, style="Card.TFrame")
+        status_inner.pack(fill="x")
         
-        # Timer
-        self.timer_label = ttk.Label(status_frame, text="00:00:00", 
-                                     font=('Consolas', 24))
-        self.timer_label.pack(pady=5)
+        # Timer display (large)
+        self.timer_label = ttk.Label(status_inner, text="00:00:00", style="Timer.TLabel")
+        self.timer_label.pack(pady=10)
         
-        # Packets captured
-        self.packets_label = ttk.Label(status_frame, text="📦 Packets: 0", 
-                                       font=('Segoe UI', 11))
+        # Packet counter
+        self.packets_label = ttk.Label(status_inner, text="📦 Packets: 0", style="Card.TLabel", font=("Segoe UI", 12))
         self.packets_label.pack(pady=5)
         
-        # Control Buttons
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X, pady=15)
+        # Control Buttons Card
+        btn_card = ttk.Frame(left, style="TFrame")
+        btn_card.pack(fill="x", pady=12)
         
-        self.start_btn = ttk.Button(btn_frame, text="▶ START CAPTURE", 
-                                    command=self.start_capture,
-                                    style='Accent.TButton')
-        self.start_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
+        self.start_btn = ttk.Button(btn_card, text="▶ START CAPTURE", command=self.start_capture, style="Accent.TButton")
+        self.start_btn.pack(fill="x", pady=4)
         
-        self.stop_btn = ttk.Button(btn_frame, text="⏹ STOP", 
-                                   command=self.stop_capture,
-                                   state=tk.DISABLED)
-        self.stop_btn.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
+        # RIGHT COLUMN - Activity Log
+        right = ttk.Frame(content)
+        right.pack(side="right", fill="both", expand=True)
         
-        # Output log
-        log_frame = ttk.LabelFrame(main_frame, text="📝 Output Log", padding="10")
-        log_frame.pack(fill=tk.BOTH, expand=True)
+        log_card = ttk.LabelFrame(right, text="📋 Activity Log", style="Card.TLabelframe", padding=12)
+        log_card.pack(fill="both", expand=True)
         
-        self.log_text = tk.Text(log_frame, height=8, font=('Consolas', 9),
-                               state=tk.DISABLED, wrap=tk.WORD, bg='#1e1e1e', fg='#d4d4d4')
-        self.log_text.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        self.log_text = scrolledtext.ScrolledText(
+            log_card, 
+            width=50, 
+            height=20, 
+            state=tk.DISABLED, 
+            wrap=tk.WORD,
+            background=BG_COLOR, 
+            foreground=TEXT_COLOR,
+            font=("Consolas", 9),
+            insertbackground=TEXT_COLOR
+        )
+        self.log_text.pack(fill="both", expand=True)
         
-        scrollbar = ttk.Scrollbar(log_frame, orient="vertical", 
-                                  command=self.log_text.yview)
-        scrollbar.pack(fill=tk.Y, side=tk.RIGHT)
-        self.log_text.configure(yscrollcommand=scrollbar.set)
+        # Configure log tags for colored messages
+        self.log_text.tag_config("info", foreground=TEXT_COLOR)
+        self.log_text.tag_config("success", foreground=SUCCESS_COLOR)
+        self.log_text.tag_config("error", foreground=ERROR_COLOR)
+        self.log_text.tag_config("warning", foreground=WARNING_COLOR)
+        
+        # ==========================================
+        # FOOTER
+        # ==========================================
+        footer = ttk.Frame(self.root, padding=(16, 10))
+        footer.pack(fill="x")
+        
+        ttk.Label(footer, text="💡 Run as Administrator for best results", foreground=ACCENT_COLOR).pack(side="left")
+        
+        # Clear log button
+        ttk.Button(footer, text="🗑", command=self.clear_log, width=3).pack(side="right", padx=4)
+        
+        # Initial log messages
+        self.log("🚀 Dataset Capture Tool loaded", "success")
+        if SCAPY_AVAILABLE:
+            self.log("✓ Scapy installed - packet capture available", "success")
+        else:
+            self.log("⚠ Scapy NOT installed - capture will not work", "warning")
+            self.log("   Install with: pip install scapy", "info")
+        self.log("💡 Run as Administrator for best results", "info")
     
     def browse_folder(self):
         folder = filedialog.askdirectory(title="Select Output Folder")
@@ -564,10 +659,29 @@ class SnifferGUI:
             self.output_dir.delete(0, tk.END)
             self.output_dir.insert(0, folder)
     
-    def log(self, message):
+    def open_captures_folder(self):
+        """Open the captures folder in file explorer"""
+        path = os.path.abspath(self.output_dir.get())
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+        try:
+            if os.name == "nt":
+                os.startfile(path)
+            else:
+                os.system(f"xdg-open {path} &")
+        except Exception as e:
+            self.log(f"Error opening folder: {e}", "error")
+    
+    def clear_log(self):
+        """Clear the activity log"""
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state=tk.DISABLED)
+    
+    def log(self, message, level="info"):
         self.log_text.configure(state=tk.NORMAL)
         timestamp = datetime.now().strftime("%H:%M:%S")
-        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
+        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n", level)
         self.log_text.see(tk.END)
         self.log_text.configure(state=tk.DISABLED)
     
@@ -603,9 +717,9 @@ class SnifferGUI:
         
         return True
     
-    def sniffer_callback(self, message):
+    def sniffer_callback(self, message, level="info"):
         """Callback for sniffer messages"""
-        self.root.after(0, lambda: self.log(message))
+        self.root.after(0, lambda: self.log(message, level))
     
     def start_capture(self):
         if not self.validate_inputs():
@@ -638,7 +752,7 @@ class SnifferGUI:
             self.start_time = time.time()
             
             # Update UI
-            self.status_label.config(text="🔴 CAPTURING", foreground='red')
+            self.status_label.config(text="🔴 CAPTURING", foreground=ERROR_COLOR)
             self.start_btn.config(state=tk.DISABLED)
             self.stop_btn.config(state=tk.NORMAL)
             
@@ -648,24 +762,24 @@ class SnifferGUI:
             self.duration.config(state=tk.DISABLED)
             self.output_dir.config(state=tk.DISABLED)
             
-            self.log(f"⏺ Started capture")
-            self.log(f"   Label: {attack_label}")
-            self.log(f"   Duration: {duration}s")
-            self.log(f"   Output: {output_dir}")
+            self.log(f"⏺ Started capture", "success")
+            self.log(f"   Label: {attack_label}", "info")
+            self.log(f"   Duration: {duration}s", "info")
+            self.log(f"   Output: {output_dir}", "info")
             if attacker_ip:
-                self.log(f"   Attacker IP: {attacker_ip}")
+                self.log(f"   Attacker IP: {attacker_ip}", "info")
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to start sniffer:\n{e}")
-            self.log(f"ERROR: {e}")
+            self.log(f"ERROR: {e}", "error")
     
     def stop_capture(self):
-        self.log("⏹ Stopping capture...")
+        self.log("⏹ Stopping capture...", "warning")
         
         def stop_sniff():
             if self.sniffer:
                 total_packets = self.sniffer.stop()
-                self.root.after(0, lambda: self.log(f"✅ Capture complete! Total packets: {total_packets}"))
+                self.root.after(0, lambda: self.log(f"✅ Capture complete! Total packets: {total_packets}", "success"))
                 self.sniffer = None
         
         threading.Thread(target=stop_sniff, daemon=True).start()
@@ -673,7 +787,7 @@ class SnifferGUI:
         self.is_running = False
         
         # Update UI
-        self.status_label.config(text="⏹ Stopped", foreground='gray')
+        self.status_label.config(text="🟢 Ready", foreground=SUCCESS_COLOR)
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         
@@ -743,11 +857,6 @@ def main():
         root.destroy()
     
     root = tk.Tk()
-    
-    # Style
-    style = ttk.Style()
-    style.configure('Accent.TButton', font=('Segoe UI', 11, 'bold'))
-    
     app = SnifferGUI(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
