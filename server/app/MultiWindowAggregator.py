@@ -390,6 +390,28 @@ class MultiWindowAggregator:
         unique_dst_ips = int(df["dst_ip"].nunique()) if "dst_ip" in df.columns else 0
         unique_dst_ports = int(df["dst_port"].nunique()) if "dst_port" in df.columns else 0
 
+        # Port hit features for remote connection detection
+        tcp_ports_hit = 0  # All TCP except remote connection ports
+        udp_ports_hit = 0  # All UDP except remote connection ports
+        remote_conn_port_hits = 0  # Remote connection ports: SSH(22), Telnet(23), Rlogin(513), RDP(3389), VNC(5900), X11(6000-6063)
+        
+        if "dst_port" in df.columns and "protocol" in df.columns:
+            tcp_mask = df["protocol"] == "TCP"
+            udp_mask = df["protocol"] == "UDP"
+            
+            # All remote connection ports (to exclude from general tcp/udp counts)
+            remote_conn_ports = [22, 23, 513, 3389, 5900] + list(range(6000, 6064))
+            remote_conn_mask = df["dst_port"].isin(remote_conn_ports)
+            
+            # TCP ports hit: all TCP packets EXCEPT remote connection ports
+            tcp_ports_hit = int((tcp_mask & ~remote_conn_mask).sum())
+            
+            # UDP ports hit: all UDP packets EXCEPT remote connection ports
+            udp_ports_hit = int((udp_mask & ~remote_conn_mask).sum())
+            
+            # Remote connection port hits: any protocol targeting remote conn ports
+            remote_conn_port_hits = int(remote_conn_mask.sum())
+
         return {
             "packet_count": packet_count,
             "packet_rate_pps": packet_rate,
@@ -403,6 +425,9 @@ class MultiWindowAggregator:
             "arp_count": arp_count,
             "unique_dst_ips": unique_dst_ips,
             "unique_dst_ports": unique_dst_ports,
+            "tcp_ports_hit": tcp_ports_hit,
+            "udp_ports_hit": udp_ports_hit,
+            "remote_conn_port_hits": remote_conn_port_hits,
         }
 
     def _tcp_ddos_scan_features(self, df, duration):
