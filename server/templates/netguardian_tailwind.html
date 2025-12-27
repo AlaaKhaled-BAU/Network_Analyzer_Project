@@ -533,6 +533,102 @@
                 </div>
             </div>
 
+            <!-- TELEGRAM BOT SECTION -->
+            <div class="bg-gradient-to-r from-blue-900 to-purple-900 rounded-xl p-6 mb-8 border border-blue-700">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center space-x-3">
+                        <div class="bg-blue-500 p-3 rounded-lg">
+                            <i data-feather="send" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold">📨 Telegram Security Alerts</h3>
+                            <p class="text-sm text-gray-300">Get real-time security notifications via Telegram</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div id="bot-status-indicator" class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                        <span id="bot-status-text" class="text-sm text-green-400">Bot Active</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Bot Configuration -->
+                    <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                        <h4 class="text-sm font-semibold mb-3 flex items-center">
+                            <i data-feather="settings" class="w-4 h-4 mr-2"></i>
+                            ⚙ Bot Configuration
+                        </h4>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="text-xs text-gray-400 block mb-1">Webhook URL (ngrok)</label>
+                                <input type="text" id="webhookUrl" placeholder="https://your-ngrok-url.io"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            <button onclick="setTelegramWebhook()"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-medium">
+                                ✔ Set Webhook
+                            </button>
+                            <div id="webhook-status" class="text-xs"></div>
+                        </div>
+                    </div>
+
+                    <!-- Broadcast Alert -->
+                    <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                        <h4 class="text-sm font-semibold mb-3 flex items-center">
+                            <i data-feather="bell" class="w-4 h-4 mr-2"></i>
+                            🔔 Broadcast Security Alert
+                        </h4>
+                        <div class="space-y-3">
+                            <textarea id="alertMessage" rows="3" placeholder="Type security alert message..."
+                                class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"></textarea>
+                            <div class="flex items-center justify-between text-xs text-gray-400">
+                                <span id="subscriber-count">
+                                    👥 0 subscribers
+                                </span>
+                                <button onclick="sendSecurityAlert()"
+                                    class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium">
+                                    ✈ Send Alert
+                                </button>
+                            </div>
+                            <div id="alert-status" class="text-xs"></div>
+                        </div>
+                    </div>
+
+                    <!-- Bot Statistics -->
+                    <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                        <h4 class="text-sm font-semibold mb-3 flex items-center">
+                            <i data-feather="bar-chart-2" class="w-4 h-4 mr-2"></i>
+                            📊 Bot Statistics
+                        </h4>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center py-2 border-b border-gray-700">
+                                <span class="text-xs text-gray-400">Total Subscribers</span>
+                                <span id="total-subscribers" class="text-sm font-bold text-blue-400">0</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-gray-700">
+                                <span class="text-xs text-gray-400">Alerts Sent Today</span>
+                                <span id="alerts-sent" class="text-sm font-bold text-green-400">0</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2">
+                                <span class="text-xs text-gray-400">Last Alert</span>
+                                <span id="last-alert-time" class="text-xs text-gray-500">Never</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Messages -->
+                <div class="mt-4 bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <h4 class="text-sm font-semibold mb-3 flex items-center">
+                        <i data-feather="message-circle" class="w-4 h-4 mr-2"></i>
+                        💬 Recent Bot Messages
+                    </h4>
+                    <div id="bot-messages" class="space-y-2 max-h-48 overflow-y-auto">
+                        <div class="text-center text-gray-500 text-xs py-4">No messages yet</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
                     <h3 class="text-lg font-semibold mb-4">Attack Type Probabilities (ML)</h3>
@@ -735,8 +831,139 @@
         // ==================== CONFIGURATION ====================
         // Use empty string for same-origin requests when served by FastAPI
         const API_BASE_URL = '';
+        const TELEGRAM_BOT_URL = 'http://localhost:5000';  // Telegram bot server
         let chartInstances = {};
         let currentPacketPage = 1;
+        let botStatsInterval;
+
+        // ==================== TELEGRAM BOT FUNCTIONS ====================
+        async function setTelegramWebhook() {
+            const url = document.getElementById('webhookUrl').value;
+            if (!url) {
+                alert('Please enter a webhook URL');
+                return;
+            }
+
+            const statusEl = document.getElementById('webhook-status');
+            statusEl.innerHTML = '<span class="text-blue-400">Setting webhook...</span>';
+
+            try {
+                const response = await fetch(`${TELEGRAM_BOT_URL}/api/webhook/set`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ webhook_url: url })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    statusEl.innerHTML = '<span class="text-green-400">✓ Webhook configured!</span>';
+                    document.getElementById('bot-status-indicator').className = 'w-3 h-3 bg-green-500 rounded-full animate-pulse';
+                    document.getElementById('bot-status-text').innerHTML = '<span class="text-green-400">Bot Active</span>';
+                } else {
+                    statusEl.innerHTML = '<span class="text-red-400">✗ Failed to set webhook</span>';
+                }
+            } catch (error) {
+                statusEl.innerHTML = '<span class="text-red-400">Error: ' + error.message + '</span>';
+            }
+        }
+
+        async function sendSecurityAlert() {
+            const message = document.getElementById('alertMessage').value;
+            if (!message) {
+                alert('Please enter an alert message');
+                return;
+            }
+
+            const statusEl = document.getElementById('alert-status');
+            statusEl.innerHTML = '<span class="text-blue-400">Sending alert...</span>';
+
+            try {
+                const response = await fetch(`${TELEGRAM_BOT_URL}/api/broadcast`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: '🚨 SECURITY ALERT 🚨\n\n' + message })
+                });
+                const data = await response.json();
+
+                statusEl.innerHTML = `<span class="text-green-400">✓ Alert sent to ${data.sent_to} users</span>`;
+                document.getElementById('alertMessage').value = '';
+                document.getElementById('alerts-sent').textContent = parseInt(document.getElementById('alerts-sent').textContent) + 1;
+                document.getElementById('last-alert-time').textContent = new Date().toLocaleTimeString();
+
+                updateBotMessages(`Alert sent to ${data.sent_to} subscribers: "${message}"`);
+            } catch (error) {
+                statusEl.innerHTML = '<span class="text-red-400">Error: ' + error.message + '</span>';
+            }
+        }
+
+        async function loadBotStats() {
+            try {
+                const response = await fetch(`${TELEGRAM_BOT_URL}/api/stats`);
+                const data = await response.json();
+
+                document.getElementById('subscriber-count').innerHTML = `👥 ${data.total_users} subscribers`;
+                document.getElementById('total-subscribers').textContent = data.total_users;
+            } catch (error) {
+                console.error('Error loading bot stats:', error);
+            }
+        }
+
+        async function loadBotMessages() {
+            try {
+                const response = await fetch(`${TELEGRAM_BOT_URL}/api/messages`);
+                const data = await response.json();
+
+                const container = document.getElementById('bot-messages');
+                if (data.messages && data.messages.length > 0) {
+                    container.innerHTML = data.messages.slice(0, 5).map(msg => `
+                        <div class="bg-gray-700 rounded p-2 text-xs">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-gray-400">Chat ID: ${msg.chat_id}</span>
+                                <span class="text-gray-500">${msg.timestamp}</span>
+                            </div>
+                            <div class="text-white">${msg.text}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<div class="text-center text-gray-500 text-xs py-4">No messages yet</div>';
+                }
+            } catch (error) {
+                console.error('Error loading bot messages:', error);
+            }
+        }
+
+        function updateBotMessages(message) {
+            const container = document.getElementById('bot-messages');
+            const newMsg = document.createElement('div');
+            newMsg.className = 'bg-gray-700 rounded p-2 text-xs';
+            newMsg.innerHTML = `
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-blue-400">System</span>
+                    <span class="text-gray-500">${new Date().toLocaleTimeString()}</span>
+                </div>
+                <div class="text-white">${message}</div>
+            `;
+
+            if (container.firstChild && container.firstChild.className === 'text-center text-gray-500 text-xs py-4') {
+                container.innerHTML = '';
+            }
+            container.insertBefore(newMsg, container.firstChild);
+        }
+
+        function startBotStatsRefresh() {
+            loadBotStats();
+            loadBotMessages();
+            botStatsInterval = setInterval(() => {
+                loadBotStats();
+                loadBotMessages();
+            }, 3000);
+        }
+
+        function stopBotStatsRefresh() {
+            if (botStatsInterval) {
+                clearInterval(botStatsInterval);
+            }
+        }
 
         // ==================== PAGE NAVIGATION ====================
         function showPage(pageName) {
@@ -751,16 +978,22 @@
             document.getElementById(pageName + '-page').classList.add('active');
             event.target.classList.add('active');
 
+            // Stop bot refresh when leaving security page
+            stopBotStatsRefresh();
+
             if (pageName === 'analytics') {
                 loadAnalytics();
             } else if (pageName === 'security') {
                 loadSecurity();
+                startBotStatsRefresh();  // Start bot stats refresh
             } else if (pageName === 'performance') {
                 loadPerformance();
             } else if (pageName === 'packets') {
                 currentPacketPage = 1;
                 loadPackets(1);
             }
+
+            feather.replace();
         }
 
         // ==================== UTILITY FUNCTIONS ====================

@@ -69,9 +69,24 @@ CONFIDENCE_HIGH = 0.9
 CONFIDENCE_MEDIUM = 0.7
 
 # ========== DATABASE SETUP ==========
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine)
+DATABASE_AVAILABLE = False
+engine = None
+SessionLocal = None
 Base = declarative_base()
+
+try:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    # Test connection with text() for SQLAlchemy 2.0 compatibility
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    SessionLocal = sessionmaker(bind=engine)
+    DATABASE_AVAILABLE = True
+    logger.info("✅ PostgreSQL database connected successfully")
+except Exception as db_error:
+    logger.warning(f"⚠️ Database not available: {db_error}")
+    logger.warning("⚠️ Server will run in LIMITED MODE (no database features)")
+    logger.warning("⚠️ Start PostgreSQL and restart server for full functionality")
 
 
 # ========== ORM MODELS ==========
@@ -221,9 +236,9 @@ class DetectedAlert(Base):
     resolved = Column(Boolean, default=False, index=True)
     resolved_at = Column(DateTime)
 
-
-# Create tables
-Base.metadata.create_all(engine)
+# Create tables (only if database is available)
+if DATABASE_AVAILABLE and engine is not None:
+    Base.metadata.create_all(engine)
 
 # ========== LOAD ML MODEL ==========
 logger.info("=" * 60)
@@ -284,6 +299,12 @@ if STATIC_DIR.exists():
 
 
 # ========== HELPER FUNCTIONS ==========
+def require_database():
+    """Check if database is available, return error dict if not"""
+    if not DATABASE_AVAILABLE:
+        return {"error": "Database not available", "message": "Start PostgreSQL for full functionality"}
+    return None
+
 def get_severity(confidence: float) -> str:
     """Determine alert severity based on confidence score"""
     if confidence >= CONFIDENCE_HIGH:
@@ -535,6 +556,9 @@ async def ingest_packets(
     1. JSON body (direct API): POST with JSON array of packets
     2. File upload: POST with JSON file containing {"raw_packets": [...]}
     """
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available. Start PostgreSQL for full functionality.")
+    
     from fastapi import Request
     db = SessionLocal()
     
@@ -585,6 +609,9 @@ async def ingest_packets_json(packets: List[dict]):
     
     Usage: POST /ingest with JSON body: [{"timestamp": ..., "src_ip": ...}, ...]
     """
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available. Start PostgreSQL for full functionality.")
+    
     db = SessionLocal()
     
     try:
@@ -610,6 +637,7 @@ def root():
     return {
         "status": "running",
         "service": "NetGuardian Pro Dashboard",
+        "database_available": DATABASE_AVAILABLE,
         "model_loaded": MODEL_LOADED,
         "aggregator_available": AGGREGATOR_AVAILABLE,
         "timestamp": datetime.utcnow().isoformat()
@@ -620,7 +648,8 @@ def root():
 def health_check():
     """Health check endpoint for monitoring"""
     return {
-        "status": "healthy",
+        "status": "healthy" if DATABASE_AVAILABLE else "limited",
+        "database_available": DATABASE_AVAILABLE,
         "model_loaded": MODEL_LOADED,
         "aggregator_available": AGGREGATOR_AVAILABLE,
         "timestamp": datetime.utcnow().isoformat()
@@ -654,6 +683,9 @@ def serve_dashboard():
 @app.get("/api/features")
 def api_features(window_size: int = 5):
     """Get aggregated features from aggregated_features table"""
+    if not DATABASE_AVAILABLE:
+        return {"error": "Database not available", "message": "Start PostgreSQL for full functionality"}
+    
     db = SessionLocal()
     try:
         # Get from aggregated_features
@@ -779,6 +811,10 @@ def _compute_features_from_raw_packets(db):
 @app.get("/api/protocols")
 def api_protocols():
     """Get protocol distribution for charts"""
+    db_error = require_database()
+    if db_error:
+        return {"labels": [], "values": []}
+    
     db = SessionLocal()
     try:
         result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
@@ -799,6 +835,10 @@ def api_protocols():
 @app.get("/api/top-sources")
 def api_top_sources(limit: int = 5):
     """Get top source IPs by packet count"""
+    db_error = require_database()
+    if db_error:
+        return {"sources": []}
+    
     db = SessionLocal()
     try:
         result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
