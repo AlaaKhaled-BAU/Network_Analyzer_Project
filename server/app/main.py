@@ -10,9 +10,10 @@ Features:
 - File upload packet ingestion (JSON)
 - Complete dashboard API endpoints
 - 3 new port category features
+- WebSocket real-time dashboard updates (/ws/dashboard)
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +33,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Optional
 import uvicorn
+import asyncio
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -298,6 +300,51 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+# ========== WEBSOCKET CONNECTION MANAGER ==========
+class ConnectionManager:
+    """Manages WebSocket connections for real-time dashboard updates"""
+    
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        """Accept and store a new WebSocket connection"""
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info(f"📡 WebSocket connected. Total clients: {len(self.active_connections)}")
+    
+    def disconnect(self, websocket: WebSocket):
+        """Remove a WebSocket connection"""
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        logger.info(f"📡 WebSocket disconnected. Total clients: {len(self.active_connections)}")
+    
+    async def broadcast(self, message: dict):
+        """Send message to all connected dashboard clients"""
+        if not self.active_connections:
+            return
+        
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                logger.warning(f"WebSocket send failed: {e}")
+                disconnected.append(connection)
+        
+        # Clean up disconnected clients
+        for conn in disconnected:
+            if conn in self.active_connections:
+                self.active_connections.remove(conn)
+    
+    def get_connection_count(self) -> int:
+        """Return number of active connections"""
+        return len(self.active_connections)
+
+# Initialize WebSocket manager
+ws_manager = ConnectionManager()
+
+
 # ========== HELPER FUNCTIONS ==========
 def require_database():
     """Check if database is available, return error dict if not"""
@@ -420,6 +467,24 @@ def predict_and_alert(db_session, feature_row: AggregatedFeature) -> Optional[Di
             result["alert_created"] = True
             result["severity"] = severity
             logger.warning(f"🚨 ALERT: {predicted_label} from {feature_row.src_ip} ({confidence:.2%} confidence)")
+            
+            # Broadcast alert to all connected WebSocket clients
+            if ws_manager.get_connection_count() > 0:
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(ws_manager.broadcast({
+                            "type": "alert",
+                            "attack_type": predicted_label,
+                            "confidence": confidence,
+                            "severity": severity,
+                            "src_ip": feature_row.src_ip,
+                            "packet_count": feature_row.packet_count or 0,
+                            "window_size": feature_row.window_size,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }))
+                except Exception as ws_error:
+                    logger.warning(f"WebSocket broadcast failed: {ws_error}")
         else:
             result["alert_created"] = False
         
@@ -617,6 +682,17 @@ async def ingest_packets_json(packets: List[dict]):
     try:
         logger.info(f"📥 Ingesting {len(packets)} packets via direct JSON")
         result = await _process_packets(packets, db)
+        
+        # Broadcast update to all connected WebSocket clients
+        if ws_manager.get_connection_count() > 0:
+            await ws_manager.broadcast({
+                "type": "packet_update",
+                "raw_packets": result.get("raw_packets", 0),
+                "aggregated_features": result.get("aggregated_features", 0),
+                "timestamp": datetime.utcnow().isoformat()
+            })
+            logger.info(f"📡 Broadcasted update to {ws_manager.get_connection_count()} dashboard clients")
+        
         return result
         
     except Exception as e:
@@ -652,8 +728,78 @@ def health_check():
         "database_available": DATABASE_AVAILABLE,
         "model_loaded": MODEL_LOADED,
         "aggregator_available": AGGREGATOR_AVAILABLE,
+        "websocket_clients": ws_manager.get_connection_count(),
         "timestamp": datetime.utcnow().isoformat()
     }
+
+
+# ========== WEBSOCKET ENDPOINT ==========
+@app.websocket("/ws/dashboard")
+async def websocket_dashboard(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time dashboard updates.
+    
+    Message Types Sent:
+    - 'initial': Full dashboard data on connect
+    - 'packet_update': New packets ingested
+    - 'alert': Security alert detected
+    - 'stats_update': Periodic stats refresh
+    """
+    await ws_manager.connect(websocket)
+    
+    try:
+        # Send initial data on connection
+        initial_data = {
+            "type": "initial",
+            "timestamp": datetime.utcnow().isoformat(),
+            "stats": {
+                "database_available": DATABASE_AVAILABLE,
+                "model_loaded": MODEL_LOADED,
+                "connected_clients": ws_manager.get_connection_count()
+            }
+        }
+        
+        # Add database stats if available
+        if DATABASE_AVAILABLE:
+            db = SessionLocal()
+            try:
+                # Get latest packet count
+                packet_count = db.query(func.count(RawPacket.id)).scalar() or 0
+                alert_count = db.query(func.count(DetectedAlert.id)).filter(
+                    DetectedAlert.detected_at >= datetime.utcnow() - timedelta(hours=24)
+                ).scalar() or 0
+                
+                initial_data["stats"]["total_packets"] = packet_count
+                initial_data["stats"]["alerts_24h"] = alert_count
+            finally:
+                db.close()
+        
+        await websocket.send_json(initial_data)
+        
+        # Keep connection alive and handle client messages
+        while True:
+            try:
+                # Wait for client messages (ping/pong, requests, etc.)
+                data = await websocket.receive_text()
+                
+                if data == "ping":
+                    await websocket.send_text("pong")
+                elif data == "get_stats":
+                    # Client requested fresh stats
+                    await websocket.send_json({
+                        "type": "stats_update",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "connected_clients": ws_manager.get_connection_count()
+                    })
+            except WebSocketDisconnect:
+                break
+    
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        ws_manager.disconnect(websocket)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)

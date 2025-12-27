@@ -2087,6 +2087,227 @@
             }
         }
 
+        // ==================== WEBSOCKET REAL-TIME UPDATES ====================
+        class DashboardWebSocket {
+            constructor() {
+                this.ws = null;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 10;
+                this.reconnectDelay = 1000;
+                this.isConnected = false;
+                this.pollingFallback = null;
+            }
+
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`;
+                
+                console.log('📡 Connecting to WebSocket:', wsUrl);
+                this.ws = new WebSocket(wsUrl);
+
+                this.ws.onopen = () => {
+                    console.log('✅ WebSocket connected');
+                    this.isConnected = true;
+                    this.reconnectAttempts = 0;
+                    this.updateConnectionStatus(true);
+                    
+                    // Stop polling fallback if running
+                    if (this.pollingFallback) {
+                        clearInterval(this.pollingFallback);
+                        this.pollingFallback = null;
+                        console.log('🔄 Stopped polling fallback');
+                    }
+                };
+
+                this.ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    this.handleMessage(data);
+                };
+
+                this.ws.onclose = (event) => {
+                    console.log('❌ WebSocket disconnected:', event.code, event.reason);
+                    this.isConnected = false;
+                    this.updateConnectionStatus(false);
+                    this.attemptReconnect();
+                };
+
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                };
+            }
+
+            handleMessage(data) {
+                console.log('📨 WebSocket message:', data.type);
+                
+                switch (data.type) {
+                    case 'initial':
+                        // Initial connection data
+                        console.log('📊 Initial stats:', data.stats);
+                        if (data.stats.total_packets) {
+                            document.getElementById('totalPackets').textContent = 
+                                formatNumber(data.stats.total_packets);
+                        }
+                        break;
+                    
+                    case 'packet_update':
+                        // New packets ingested - refresh relevant charts
+                        console.log(`📦 ${data.raw_packets} packets ingested`);
+                        this.refreshDashboard();
+                        this.showToast(`📦 ${data.raw_packets} packets ingested`, 'info');
+                        break;
+                    
+                    case 'alert':
+                        // Security alert detected!
+                        console.log('🚨 ALERT:', data.attack_type);
+                        this.showAlertNotification(data);
+                        this.refreshSecurityPage();
+                        break;
+                    
+                    case 'stats_update':
+                        // Periodic stats refresh
+                        console.log('📈 Stats updated');
+                        break;
+                }
+
+                // Update "last updated" timestamp
+                document.getElementById('last-updated').textContent = 
+                    `Last updated: ${new Date().toLocaleTimeString()}`;
+            }
+
+            showAlertNotification(alert) {
+                // Create toast notification for security alert
+                const toast = document.createElement('div');
+                const severityColor = alert.severity === 'CRITICAL' ? 'red' : 
+                                     alert.severity === 'HIGH' ? 'orange' : 'yellow';
+                
+                toast.className = `fixed top-20 right-4 p-4 rounded-lg shadow-lg z-50 bg-${severityColor}-600 border border-${severityColor}-500 animate-pulse`;
+                toast.style.animation = 'pulse 2s infinite';
+                toast.id = 'alert-toast-' + Date.now();
+                
+                toast.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <div class="text-2xl">🚨</div>
+                        <div>
+                            <h4 class="font-bold text-white">${alert.attack_type} Detected!</h4>
+                            <p class="text-sm text-gray-200">Source: ${alert.src_ip}</p>
+                            <p class="text-sm text-gray-200">Confidence: ${(alert.confidence * 100).toFixed(1)}%</p>
+                            <p class="text-xs text-gray-300">${alert.timestamp}</p>
+                        </div>
+                        <button onclick="this.parentElement.parentElement.remove()" class="text-white hover:text-gray-300 ml-2">✕</button>
+                    </div>
+                `;
+                
+                document.body.appendChild(toast);
+                
+                // Auto-remove after 15 seconds
+                setTimeout(() => {
+                    const el = document.getElementById(toast.id);
+                    if (el) el.remove();
+                }, 15000);
+
+                // Update security page if visible
+                const securityStatus = document.getElementById('security-status');
+                if (securityStatus) {
+                    securityStatus.textContent = `${alert.attack_type} DETECTED`;
+                    securityStatus.parentElement.parentElement.className = 
+                        'bg-gradient-to-r from-red-900 to-red-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-red-700';
+                }
+            }
+
+            showToast(message, type = 'info') {
+                const colors = {
+                    info: 'bg-blue-600',
+                    success: 'bg-green-600',
+                    warning: 'bg-yellow-600',
+                    error: 'bg-red-600'
+                };
+                
+                const toast = document.createElement('div');
+                toast.className = `fixed bottom-4 right-4 p-3 rounded-lg shadow-lg z-50 ${colors[type]} text-white text-sm`;
+                toast.textContent = message;
+                document.body.appendChild(toast);
+                
+                setTimeout(() => toast.remove(), 3000);
+            }
+
+            refreshDashboard() {
+                const activePage = document.querySelector('.page.active').id;
+                if (activePage === 'dashboard-page') {
+                    // Refresh only essential data, not all charts
+                    loadDashboard();
+                }
+            }
+
+            refreshSecurityPage() {
+                const activePage = document.querySelector('.page.active').id;
+                if (activePage === 'security-page') {
+                    loadSecurity();
+                }
+            }
+
+            updateConnectionStatus(connected) {
+                const statusDot = document.querySelector('.animate-pulse');
+                if (statusDot) {
+                    if (connected) {
+                        statusDot.classList.remove('bg-red-500');
+                        statusDot.classList.add('bg-green-500');
+                    } else {
+                        statusDot.classList.remove('bg-green-500');
+                        statusDot.classList.add('bg-red-500');
+                    }
+                }
+            }
+
+            attemptReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
+                    console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+                    setTimeout(() => this.connect(), delay);
+                } else {
+                    console.error('❌ Max reconnection attempts reached. Falling back to HTTP polling.');
+                    this.startPollingFallback();
+                }
+            }
+
+            startPollingFallback() {
+                if (this.pollingFallback) return;
+                
+                console.log('⚠️ Starting HTTP polling fallback');
+                this.showToast('WebSocket unavailable. Using polling mode.', 'warning');
+                
+                this.pollingFallback = setInterval(() => {
+                    const activePage = document.querySelector('.page.active').id;
+                    if (activePage === 'dashboard-page') {
+                        initializeDashboard();
+                    } else if (activePage === 'analytics-page') {
+                        loadAnalytics();
+                    } else if (activePage === 'security-page') {
+                        loadSecurity();
+                    } else if (activePage === 'performance-page') {
+                        loadPerformance();
+                    }
+                }, 5000);
+            }
+
+            send(message) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(typeof message === 'string' ? message : JSON.stringify(message));
+                }
+            }
+
+            ping() {
+                this.send('ping');
+            }
+        }
+
+        // Helper function for number formatting
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        }
+
         // ==================== INITIALIZE ====================
         async function initializeDashboard() {
             await loadDashboard();
@@ -2099,22 +2320,21 @@
             await loadTopPorts();
         }
 
+        // Initialize dashboard data first
         initializeDashboard();
 
-        setInterval(() => {
-            const activePage = document.querySelector('.page.active').id;
-            if (activePage === 'dashboard-page') {
-                initializeDashboard();
-            } else if (activePage === 'analytics-page') {
-                loadAnalytics();
-            } else if (activePage === 'security-page') {
-                loadSecurity();
-            } else if (activePage === 'performance-page') {
-                loadPerformance();
-            }
-        }, 5000);
+        // Initialize WebSocket connection for real-time updates
+        const dashboardWS = new DashboardWebSocket();
+        dashboardWS.connect();
 
-        console.log('✅ NetGuardian Pro initialized with Tailwind CSS');
+        // Keep WebSocket alive with periodic pings
+        setInterval(() => {
+            if (dashboardWS.isConnected) {
+                dashboardWS.ping();
+            }
+        }, 30000);
+
+        console.log('✅ NetGuardian Pro initialized with WebSocket real-time updates');
         console.log('📡 API URL:', API_BASE_URL);
     </script>
 </body>
