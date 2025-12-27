@@ -70,6 +70,9 @@ PREDICTION_INTERVAL = 10  # seconds between prediction checks
 CONFIDENCE_HIGH = 0.9
 CONFIDENCE_MEDIUM = 0.7
 
+# Shutdown flag for graceful exit
+shutdown_flag = False
+
 # ========== DATABASE SETUP ==========
 DATABASE_AVAILABLE = False
 engine = None
@@ -497,7 +500,14 @@ def predict_and_alert(db_session, feature_row: AggregatedFeature) -> Optional[Di
 
 def run_predictions():
     """Background task: Check for unpredicted features and run predictions"""
-    while True:
+    global shutdown_flag
+    
+    while not shutdown_flag:
+        # Skip if database not available
+        if not DATABASE_AVAILABLE or SessionLocal is None:
+            time.sleep(PREDICTION_INTERVAL)
+            continue
+            
         try:
             db = SessionLocal()
             
@@ -510,6 +520,8 @@ def run_predictions():
                 logger.info(f"🔍 Found {len(unpredicted)} features to predict")
                 
                 for feature in unpredicted:
+                    if shutdown_flag:
+                        break
                     predict_and_alert(db, feature)
                 
                 db.commit()
@@ -521,6 +533,8 @@ def run_predictions():
             logger.error(f"Prediction loop error: {e}")
         
         time.sleep(PREDICTION_INTERVAL)
+    
+    logger.info("🛑 Prediction loop stopped")
 
 
 # ========== INGESTION ENDPOINTS ==========
@@ -775,12 +789,18 @@ async def websocket_dashboard(websocket: WebSocket):
                 db.close()
         
         await websocket.send_json(initial_data)
+        logger.info(f"📡 Sent initial data to WebSocket client")
         
         # Keep connection alive and handle client messages
+        # Use asyncio.wait_for with timeout to prevent proxy timeouts
         while True:
             try:
-                # Wait for client messages (ping/pong, requests, etc.)
-                data = await websocket.receive_text()
+                # Wait for client message with 30 second timeout
+                # This prevents Cloudflare from closing idle connections
+                data = await asyncio.wait_for(
+                    websocket.receive_text(),
+                    timeout=30.0
+                )
                 
                 if data == "ping":
                     await websocket.send_text("pong")
@@ -791,11 +811,23 @@ async def websocket_dashboard(websocket: WebSocket):
                         "timestamp": datetime.utcnow().isoformat(),
                         "connected_clients": ws_manager.get_connection_count()
                     })
+                    
+            except asyncio.TimeoutError:
+                # No message received - send keepalive to prevent proxy timeout
+                try:
+                    await websocket.send_json({
+                        "type": "keepalive",
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                except Exception:
+                    break  # Connection closed
+                    
             except WebSocketDisconnect:
+                logger.info("📡 WebSocket client disconnected normally")
                 break
-    
+                
     except WebSocketDisconnect:
-        pass
+        logger.info("📡 WebSocket client disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
     finally:
@@ -981,6 +1013,8 @@ def api_protocols():
 @app.get("/api/top-sources")
 def api_top_sources(limit: int = 5):
     """Get top source IPs by packet count"""
+    if not DATABASE_AVAILABLE:
+        return {"error": "Database not available", "data": []}
     db_error = require_database()
     if db_error:
         return {"sources": []}
@@ -1012,6 +1046,8 @@ def api_top_sources(limit: int = 5):
 @app.get("/api/top-destinations")
 def api_top_destinations(limit: int = 5):
     """Get top destination IPs by packet count"""
+    if not DATABASE_AVAILABLE:
+        return {"error": "Database not available", "data": []}
     db = SessionLocal()
     try:
         result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
@@ -1039,6 +1075,8 @@ def api_top_destinations(limit: int = 5):
 @app.get("/api/top-ports")
 def api_top_ports(limit: int = 5):
     """Get top destination ports by packet count"""
+    if not DATABASE_AVAILABLE:
+        return {"error": "Database not available", "data": []}
     db = SessionLocal()
     try:
         result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
@@ -1571,12 +1609,31 @@ def get_stats():
 @app.on_event("startup")
 def startup_event():
     """Start background prediction task"""
-    if MODEL_LOADED:
+    if MODEL_LOADED and DATABASE_AVAILABLE:
         prediction_thread = threading.Thread(target=run_predictions, daemon=True)
         prediction_thread.start()
         logger.info("🔄 Started background prediction loop")
+    elif not DATABASE_AVAILABLE:
+        logger.warning("⚠️ Database not available - predictions disabled")
     else:
         logger.warning("⚠️ ML model not loaded - predictions disabled")
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    """Graceful shutdown - stop prediction loop and close connections"""
+    global shutdown_flag
+    shutdown_flag = True
+    logger.info("🛑 Shutting down gracefully...")
+    
+    # Close all WebSocket connections
+    for connection in ws_manager.active_connections.copy():
+        try:
+            asyncio.create_task(connection.close())
+        except Exception:
+            pass
+    
+    logger.info("✅ Shutdown complete")
 
 
 # ========== MAIN ==========
