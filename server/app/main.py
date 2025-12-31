@@ -99,7 +99,7 @@ class RawPacket(Base):
     __tablename__ = "raw_packets"
     id = Column(Integer, primary_key=True, autoincrement=True)
     timestamp = Column(Float, nullable=False, index=True)
-    interface = Column(String(50))
+    interface = Column(String(255))
     src_ip = Column(String(50), nullable=False, index=True)
     dst_ip = Column(String(50), nullable=False, index=True)
     protocol = Column(String(20), nullable=False, index=True)
