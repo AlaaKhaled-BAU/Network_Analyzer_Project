@@ -108,9 +108,23 @@
                 </div>
 
                 <!-- Right Side -->
-                <div class="flex items-center space-x-4">
-                    <span id="last-updated" class="text-sm text-gray-400">Last updated: --:--:--</span>
-                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <div class="flex items-center space-x-6">
+                    <!-- Live Mode Toggle -->
+                    <div class="flex items-center space-x-2">
+                        <span class="text-sm text-gray-400">Live</span>
+                        <button id="liveModeToggle" onclick="toggleLiveMode()"
+                            class="w-10 h-6 bg-gray-700 rounded-full relative transition-colors duration-200 focus:outline-none">
+                            <div class="w-4 h-4 bg-white rounded-full absolute left-1 top-1 transition-transform duration-200"
+                                id="liveModeKnob"></div>
+                        </button>
+                    </div>
+
+                    <span id="last-updated" class="text-sm text-gray-400 hidden md:block">--:--:--</span>
+
+                    <div class="flex items-center space-x-2 bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
+                        <div id="db-status-indicator" class="w-2 h-2 bg-gray-500 rounded-full"></div>
+                        <span id="db-status-text" class="text-xs text-gray-400">Checking...</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -130,7 +144,7 @@
                         <option>Last 7 days</option>
                         <option>Last 30 days</option>
                     </select>
-                    <button
+                    <button onclick="exportExecutiveSummary()"
                         class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                         <i data-feather="download" class="w-4 h-4"></i>
                         <span>Export Report</span>
@@ -333,7 +347,7 @@
         <div id="analytics-page" class="page">
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold">Advanced Analytics</h1>
-                <button
+                <button onclick="generateAnalyticsReport()"
                     class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                     <i data-feather="bar-chart-2" class="w-4 h-4"></i>
                     <span>Generate Report</span>
@@ -437,7 +451,17 @@
             </div>
 
             <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <h3 class="text-lg font-semibold mb-4">All 40 Features</h3>
+                <div class="flex flex-col md:flex-row justify-between items-center mb-6">
+                    <h3 class="text-lg font-semibold">All 63 Features</h3>
+                    <div class="flex gap-2 w-full md:w-auto mt-4 md:mt-0">
+                        <input type="text" id="featureIpInput" placeholder="Filter by IP..."
+                            class="bg-gray-700 text-white px-3 py-1 rounded text-sm border border-gray-600 focus:outline-none focus:border-blue-500 w-full md:w-48">
+                        <button onclick="loadIPFeatures()"
+                            class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm text-white">Inspect</button>
+                        <button onclick="loadFeatures()"
+                            class="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm text-white">Reset</button>
+                    </div>
+                </div>
                 <div id="features-container">
                     <p class="text-center text-gray-500 py-8">Loading features...</p>
                 </div>
@@ -448,7 +472,7 @@
         <div id="security-page" class="page">
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold">Security & Threat Detection</h1>
-                <button
+                <button onclick="generateSecurityReport()"
                     class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                     <i data-feather="lock" class="w-4 h-4"></i>
                     <span>Security Report</span>
@@ -505,7 +529,7 @@
                         <div>
                             <h3 class="text-gray-300 text-sm">Threat Level</h3>
                             <p id="mlThreatLevel" class="text-3xl font-bold mt-2">NONE</p>
-                            <p class="text-xs text-gray-400 mt-1">Current threat status</p>
+                            <p class="text-xs text-gray-400 mt-1">AI Assessed Risk</p>
                         </div>
                         <div class="bg-orange-500 p-3 rounded-lg">
                             <i data-feather="alert-triangle" class="w-6 h-6"></i>
@@ -658,13 +682,40 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Threat Log -->
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 mt-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">🛡️ Threat Incident Log</h3>
+                    <span class="text-xs text-gray-400">Session History</span>
+                </div>
+                <div class="overflow-x-auto max-h-60 overflow-y-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs text-gray-400 uppercase bg-gray-700 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-2">Timestamp</th>
+                                <th class="px-4 py-2">Threat Type</th>
+                                <th class="px-4 py-2">Source IP</th>
+                                <th class="px-4 py-2">Confidence</th>
+                                <th class="px-4 py-2">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="threat-log-body" class="text-gray-300">
+                            <tr>
+                                <td colspan="5" class="px-4 py-2 text-center text-gray-500">No threats recorded in this
+                                    session.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
         <!-- ==================== PERFORMANCE PAGE ==================== -->
         <div id="performance-page" class="page">
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold">Network Performance</h1>
-                <button
+                <button onclick="generatePerformanceReport()"
                     class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
                     <i data-feather="zap" class="w-4 h-4"></i>
                     <span>Performance Report</span>
@@ -770,13 +821,23 @@
 
         <!-- ==================== PACKETS PAGE ==================== -->
         <div id="packets-page" class="page">
-            <div class="flex justify-between items-center mb-8">
+            <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                 <h1 class="text-3xl font-bold">Captured Packets</h1>
-                <button
-                    class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
-                    <i data-feather="save" class="w-4 h-4"></i>
-                    <span>Export Packets</span>
-                </button>
+                <div class="flex gap-4 w-full md:w-auto">
+                    <div class="relative w-full md:w-64">
+                        <input type="text" id="packetSearchInput" placeholder="Search IP, Protocol..."
+                            class="pl-10 pr-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 w-full text-sm"
+                            onkeyup="filterPacketsTable()">
+                        <div class="absolute left-3 top-2.5 text-gray-400">
+                            <i data-feather="search" class="w-4 h-4"></i>
+                        </div>
+                    </div>
+                    <button onclick="exportPackets()"
+                        class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2 whitespace-nowrap">
+                        <i data-feather="save" class="w-4 h-4"></i>
+                        <span>Export CSV</span>
+                    </button>
+                </div>
             </div>
 
             <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
@@ -1589,9 +1650,23 @@
             }
         }
 
-        async function loadFeatures() {
+        async function loadIPFeatures() {
+            const ipInput = document.getElementById('featureIpInput');
+            const ip = ipInput.value.trim();
+            if (!ip) {
+                alert('Please enter an IP address');
+                return;
+            }
+            await loadFeatures(ip);
+        }
+
+        async function loadFeatures(targetIp = null) {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/features`);
+                let url = `${API_BASE_URL}/api/features`;
+                if (targetIp) {
+                    url = `${API_BASE_URL}/api/features/ip/${targetIp}`;
+                }
+                const response = await fetch(url);
                 const data = await response.json();
 
                 if (data.error) {
@@ -1601,15 +1676,14 @@
                 }
 
                 const categories = {
-                    'Packet Statistics': ['packet_count', 'packet_rate_pps', 'byte_count', 'byte_rate_bps', 'avg_packet_size', 'min_packet_size', 'max_packet_size'],
-                    'Protocol Distribution': ['tcp_count', 'udp_count', 'icmp_count', 'arp_count', 'other_count'],
-                    'IP Diversity': ['unique_dst_ips', 'unique_dst_ports'],
-                    'TCP Flags': ['tcp_syn_count', 'tcp_ack_count', 'tcp_fin_count', 'tcp_rst_count', 'tcp_psh_count', 'syn_rate_pps', 'syn_ack_ratio'],
-                    'DNS Activity': ['dns_query_count', 'dns_response_count', 'dns_unique_domains', 'avg_dns_query_length'],
-                    'HTTP Activity': ['http_request_count', 'http_get_count', 'http_post_count', 'http_unique_paths'],
-                    'Port Scanning': ['port_scan_score', 'avg_packets_per_port', 'connection_failure_rate'],
-                    'ARP Activity': ['arp_request_count', 'arp_reply_count', 'arp_request_rate_pps'],
-                    'Timing': ['inter_arrival_time_mean', 'inter_arrival_time_std']
+                    'Packet Statistics': ['src_ip', 'packet_count', 'packet_rate_pps', 'byte_count', 'byte_rate_bps', 'avg_packet_size', 'packet_size_variance', 'min_packet_size', 'max_packet_size'],
+                    'Protocol Distribution': ['tcp_count', 'udp_count', 'icmp_count', 'arp_count'],
+                    'Port Activity': ['unique_dst_ips', 'unique_dst_ports', 'tcp_ports_hit', 'udp_ports_hit', 'remote_conn_port_hits', 'udp_dest_port_count'],
+                    'TCP & DoS Analysis': ['tcp_syn_count', 'tcp_ack_count', 'syn_rate_pps', 'syn_ack_rate_pps', 'syn_to_synack_ratio', 'half_open_count', 'syn_only_ratio', 'icmp_rate_pps', 'udp_rate_pps'],
+                    'Bruteforce Detection': ['ssh_connection_attempts', 'ftp_connection_attempts', 'http_login_attempts', 'login_request_rate', 'failed_login_count', 'auth_attempts_per_min'],
+                    'ARP & Spoofing': ['arp_request_count', 'arp_reply_count', 'gratuitous_arp_count', 'arp_binding_flap_count', 'arp_reply_without_request_count', 'unique_macs_per_ip_max', 'avg_macs_per_ip', 'duplicate_mac_ips', 'mac_ip_ratio', 'suspicious_mac_changes'],
+                    'DNS Analysis': ['dns_query_count', 'query_rate_qps', 'unique_qnames_count', 'avg_subdomain_entropy', 'pct_high_entropy_queries', 'txt_record_count', 'avg_answer_size', 'distinct_record_types', 'avg_query_interval_ms', 'avg_subdomain_length', 'max_subdomain_length', 'avg_label_count', 'dns_to_udp_ratio', 'udp_port_53_count'],
+                    'Slowloris & Scanning': ['open_conn_count', 'avg_conn_duration', 'bytes_per_conn', 'partial_http_count', 'request_completion_ratio', 'sequential_port_count', 'scan_rate_pps', 'distinct_targets_count']
                 };
 
                 let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">';
@@ -1664,13 +1738,21 @@
                     alertCard.className = mlData.threat_level === 'CRITICAL' ?
                         'bg-gradient-to-r from-red-900 to-red-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-red-700' :
                         'bg-gradient-to-r from-orange-900 to-orange-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-orange-700';
-                    alertCard.querySelector('.alert-icon i').setAttribute('data-feather', 'alert-triangle');
+
+                    // Fix: Re-create the icon element
+                    const iconContainer = alertCard.querySelector('.alert-icon');
+                    iconContainer.innerHTML = '<i data-feather="alert-triangle" class="w-8 h-8"></i>';
+
                     statusEl.textContent = 'Security Alert';
                     messageEl.textContent = `${mlData.attack_type} detected with ${mlData.confidence.toFixed(1)}% confidence. Immediate action may be required.`;
                     feather.replace();
                 } else {
                     alertCard.className = 'bg-gradient-to-r from-green-900 to-green-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-green-700';
-                    alertCard.querySelector('.alert-icon i').setAttribute('data-feather', 'check-circle');
+
+                    // Fix: Re-create the icon element
+                    const iconContainer = alertCard.querySelector('.alert-icon');
+                    iconContainer.innerHTML = '<i data-feather="check-circle" class="w-8 h-8"></i>';
+
                     statusEl.textContent = 'All Clear';
                     messageEl.textContent = 'No threats detected. Network operating normally.';
                     feather.replace();
@@ -2101,7 +2183,7 @@
             connect() {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`;
-                
+
                 console.log('📡 Connecting to WebSocket:', wsUrl);
                 this.ws = new WebSocket(wsUrl);
 
@@ -2110,7 +2192,7 @@
                     this.isConnected = true;
                     this.reconnectAttempts = 0;
                     this.updateConnectionStatus(true);
-                    
+
                     // Stop polling fallback if running
                     if (this.pollingFallback) {
                         clearInterval(this.pollingFallback);
@@ -2138,31 +2220,31 @@
 
             handleMessage(data) {
                 console.log('📨 WebSocket message:', data.type);
-                
+
                 switch (data.type) {
                     case 'initial':
                         // Initial connection data
                         console.log('📊 Initial stats:', data.stats);
                         if (data.stats.total_packets) {
-                            document.getElementById('totalPackets').textContent = 
+                            document.getElementById('totalPackets').textContent =
                                 formatNumber(data.stats.total_packets);
                         }
                         break;
-                    
+
                     case 'packet_update':
                         // New packets ingested - refresh relevant charts
                         console.log(`📦 ${data.raw_packets} packets ingested`);
                         this.refreshDashboard();
                         this.showToast(`📦 ${data.raw_packets} packets ingested`, 'info');
                         break;
-                    
+
                     case 'alert':
                         // Security alert detected!
                         console.log('🚨 ALERT:', data.attack_type);
                         this.showAlertNotification(data);
                         this.refreshSecurityPage();
                         break;
-                    
+
                     case 'stats_update':
                         // Periodic stats refresh
                         console.log('📈 Stats updated');
@@ -2170,20 +2252,31 @@
                 }
 
                 // Update "last updated" timestamp
-                document.getElementById('last-updated').textContent = 
+                document.getElementById('last-updated').textContent =
                     `Last updated: ${new Date().toLocaleTimeString()}`;
             }
 
             showAlertNotification(alert) {
+                // Log to history
+                if (typeof recentAlerts !== 'undefined') {
+                    recentAlerts.unshift(alert);
+                    if (recentAlerts.length > 50) recentAlerts.pop();
+
+                    // Update Threat Log UI
+                    if (typeof updateThreatLog === 'function') {
+                        updateThreatLog(alert);
+                    }
+                }
+
                 // Create toast notification for security alert
                 const toast = document.createElement('div');
-                const severityColor = alert.severity === 'CRITICAL' ? 'red' : 
-                                     alert.severity === 'HIGH' ? 'orange' : 'yellow';
-                
+                const severityColor = alert.severity === 'CRITICAL' ? 'red' :
+                    alert.severity === 'HIGH' ? 'orange' : 'yellow';
+
                 toast.className = `fixed top-20 right-4 p-4 rounded-lg shadow-lg z-50 bg-${severityColor}-600 border border-${severityColor}-500 animate-pulse`;
                 toast.style.animation = 'pulse 2s infinite';
                 toast.id = 'alert-toast-' + Date.now();
-                
+
                 toast.innerHTML = `
                     <div class="flex items-center space-x-3">
                         <div class="text-2xl">🚨</div>
@@ -2196,9 +2289,9 @@
                         <button onclick="this.parentElement.parentElement.remove()" class="text-white hover:text-gray-300 ml-2">✕</button>
                     </div>
                 `;
-                
+
                 document.body.appendChild(toast);
-                
+
                 // Auto-remove after 15 seconds
                 setTimeout(() => {
                     const el = document.getElementById(toast.id);
@@ -2209,7 +2302,7 @@
                 const securityStatus = document.getElementById('security-status');
                 if (securityStatus) {
                     securityStatus.textContent = `${alert.attack_type} DETECTED`;
-                    securityStatus.parentElement.parentElement.className = 
+                    securityStatus.parentElement.parentElement.className =
                         'bg-gradient-to-r from-red-900 to-red-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-red-700';
                 }
             }
@@ -2221,12 +2314,12 @@
                     warning: 'bg-yellow-600',
                     error: 'bg-red-600'
                 };
-                
+
                 const toast = document.createElement('div');
                 toast.className = `fixed bottom-4 right-4 p-3 rounded-lg shadow-lg z-50 ${colors[type]} text-white text-sm`;
                 toast.textContent = message;
                 document.body.appendChild(toast);
-                
+
                 setTimeout(() => toast.remove(), 3000);
             }
 
@@ -2272,10 +2365,10 @@
 
             startPollingFallback() {
                 if (this.pollingFallback) return;
-                
+
                 console.log('⚠️ Starting HTTP polling fallback');
                 this.showToast('WebSocket unavailable. Using polling mode.', 'warning');
-                
+
                 this.pollingFallback = setInterval(() => {
                     const activePage = document.querySelector('.page.active').id;
                     if (activePage === 'dashboard-page') {
@@ -2308,6 +2401,406 @@
             return num.toString();
         }
 
+        // ==================== ENHANCEMENTS ====================
+
+        // ==================== ENHANCEMENTS ====================
+        let isLiveMode = false;
+        let liveModeInterval = null;
+
+        function toggleLiveMode() {
+            isLiveMode = !isLiveMode;
+            const toggleBtn = document.getElementById('liveModeToggle');
+            const knob = document.getElementById('liveModeKnob');
+
+            if (isLiveMode) {
+                toggleBtn.classList.remove('bg-gray-700');
+                toggleBtn.classList.add('bg-green-600');
+                knob.classList.add('translate-x-4');
+                startLiveRefresh();
+            } else {
+                toggleBtn.classList.add('bg-gray-700');
+                toggleBtn.classList.remove('bg-green-600');
+                knob.classList.remove('translate-x-4');
+                stopLiveRefresh();
+            }
+        }
+
+        function startLiveRefresh() {
+            if (liveModeInterval) clearInterval(liveModeInterval);
+            liveModeInterval = setInterval(() => {
+                const activePage = document.querySelector('.page.active').id;
+                if (activePage === 'dashboard-page') initializeDashboard();
+                else if (activePage === 'analytics-page') loadAnalytics();
+                else if (activePage === 'security-page') loadSecurity();
+                else if (activePage === 'performance-page') loadPerformance();
+            }, 5000);
+        }
+
+        function stopLiveRefresh() {
+            if (liveModeInterval) clearInterval(liveModeInterval);
+            liveModeInterval = null;
+        }
+
+        async function exportDashboardData() {
+            try {
+                // Fetch all necessary data in parallel
+                const [featRes, srcRes, dstRes, portRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/features`),
+                    fetch(`${API_BASE_URL}/api/top-sources?limit=10`),
+                    fetch(`${API_BASE_URL}/api/top-destinations?limit=10`),
+                    fetch(`${API_BASE_URL}/api/top-ports?limit=10`)
+                ]);
+
+                const features = await featRes.json();
+                const topSrc = await srcRes.json();
+                const topDst = await dstRes.json();
+                const topPorts = await portRes.json();
+
+                if (features.error) { alert(`Error: ${features.error}`); return; }
+
+                const start = features.window_start || new Date().toISOString();
+                const end = features.window_end || new Date().toISOString();
+
+                let csv = `# Generated By: NetGuardian Pro\n`;
+                csv += `# Report Type: Network Executive Summary\n`;
+                csv += `# Data Interval: ${start} - ${end}\n`;
+                csv += `\n[SECTION] 1. TRAFFIC OVERVIEW\n`;
+                csv += "Metric,Value\n";
+                csv += `Byte Rate,${(features.byte_rate_bps || 0) / 1000} KBps\n`;
+                csv += `Packet Rate,${(features.packet_rate_pps || 0).toFixed(1)} pps\n`;
+                csv += `Total Packets,${features.packet_count || 0}\n`;
+                csv += `Active Connections (TCP),${features.tcp_count || 0}\n`;
+                csv += `Unique Source IPs,${features.unique_src_ips || 0}\n`;
+
+                csv += `\n[SECTION] 2. TOP SOURCE IPs\n`;
+                csv += "Rank,IP Address,Packets,Percentage\n";
+                topSrc.forEach((item, i) => {
+                    csv += `${i + 1},${item.ip},${item.packet_count},${item.percentage}%\n`;
+                });
+
+                csv += `\n[SECTION] 3. TOP DESTINATION IPs\n`;
+                csv += "Rank,IP Address,Packets,Percentage\n";
+                topDst.forEach((item, i) => {
+                    csv += `${i + 1},${item.ip},${item.packet_count},${item.percentage}%\n`;
+                });
+
+                csv += `\n[SECTION] 4. TOP PROTOCOL PORTS\n`;
+                csv += "Rank,Port,Service,Packets,Percentage\n";
+                topPorts.forEach((item, i) => {
+                    csv += `${i + 1},${item.port},${item.service},${item.packet_count},${item.percentage}%\n`;
+                });
+
+                downloadFile(csv, `executive_summary_${Date.now()}.csv`, 'text/csv');
+            } catch (error) {
+                alert('Export failed: ' + error.message);
+            }
+        }
+
+        async function exportExecutiveSummary() {
+            try {
+                // Fetch all necessary data
+                const [featRes, srcRes, dstRes, portRes, protoRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/features`),
+                    fetch(`${API_BASE_URL}/api/top-sources?limit=10`),
+                    fetch(`${API_BASE_URL}/api/top-destinations?limit=10`),
+                    fetch(`${API_BASE_URL}/api/top-ports?limit=10`),
+                    fetch(`${API_BASE_URL}/api/protocols`)
+                ]);
+
+                const features = await featRes.json();
+                const topSrc = await srcRes.json();
+                const topDst = await dstRes.json();
+                const topPorts = await portRes.json();
+                const protocols = await protoRes.json();
+
+                if (features.error) { alert(`Error: ${features.error}`); return; }
+
+                const start = features.window_start || new Date().toISOString();
+                const end = features.window_end || new Date().toISOString();
+
+                let csv = `# Generated By: NetGuardian Pro\n`;
+                csv += `# Report Type: Executive Summary\n`;
+                csv += `# Data Interval: ${start} - ${end}\n`;
+
+                // 1. TOP SOURCE IPs (Priority)
+                csv += `\n[SECTION] 1. TOP SOURCE IPs\n`;
+                csv += "Rank,IP Address,Packets,Percentage\n";
+                topSrc.forEach((item, i) => {
+                    csv += `${i + 1},${item.ip},${item.packet_count},${item.percentage}%\n`;
+                });
+
+                // 2. TOP DESTINATION IPs
+                csv += `\n[SECTION] 2. TOP DESTINATION IPs\n`;
+                csv += "Rank,IP Address,Packets,Percentage\n";
+                topDst.forEach((item, i) => {
+                    csv += `${i + 1},${item.ip},${item.packet_count},${item.percentage}%\n`;
+                });
+
+                // 3. TOP SERVICES (PORTS)
+                csv += `\n[SECTION] 3. TOP SERVICES (PORTS)\n`;
+                csv += "Rank,Port,Service,Packets,Percentage\n";
+                topPorts.forEach((item, i) => {
+                    csv += `${i + 1},${item.port},${item.service},${item.packet_count},${item.percentage}%\n`;
+                });
+
+                // 4. PROTOCOL DISTRIBUTION (Transport)
+                csv += `\n[SECTION] 4. TRANSPORT PROTOCOLS\n`;
+                csv += "Protocol,Count\n";
+                if (protocols.labels) {
+                    protocols.labels.forEach((label, i) => {
+                        csv += `${label},${protocols.values[i]}\n`;
+                    });
+                }
+
+                // 5. NETWORK HEALTH (Aggregated Features - Last)
+                csv += `\n[SECTION] 5. NETWORK HEALTH OVERVIEW\n`;
+                csv += "Metric,Value\n";
+                csv += `Byte Rate,${(features.byte_rate_bps || 0) / 1000} KBps\n`;
+                csv += `Packet Rate,${(features.packet_rate_pps || 0).toFixed(1)} pps\n`;
+                csv += `Total Packets,${features.packet_count || 0}\n`;
+                csv += `Active Connections,${features.tcp_count || 0}\n`;
+                csv += `Unique IPs,${features.unique_src_ips || 0}\n`;
+
+                downloadFile(csv, `executive_summary_${Date.now()}.csv`, 'text/csv');
+            } catch (error) {
+                alert('Export failed: ' + error.message);
+            }
+        }
+
+        async function checkDBStatus() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                const data = await response.json();
+
+                const dot = document.getElementById('db-status-indicator');
+                const text = document.getElementById('db-status-text');
+
+                if (data.database_connected) {
+                    dot.classList.remove('bg-red-500', 'bg-gray-500');
+                    dot.classList.add('bg-green-500');
+                    text.textContent = 'DB Connected';
+                    text.classList.remove('text-red-400');
+                    text.classList.add('text-green-400');
+                } else {
+                    throw new Error('Disconnected');
+                }
+            } catch (error) {
+                const dot = document.getElementById('db-status-indicator');
+                const text = document.getElementById('db-status-text');
+
+                dot.classList.remove('bg-green-500', 'bg-gray-500');
+                dot.classList.add('bg-red-500');
+                text.textContent = 'DB Offline';
+                text.classList.remove('text-green-400');
+                text.classList.add('text-red-400');
+            }
+        }
+
+        // Check DB Status every 30s
+        checkDBStatus();
+        setInterval(checkDBStatus, 30000);
+
+        // ========== REPORT GENERATORS & SPECIAL EXPORTS ==========
+        let recentAlerts = [];
+
+        // Helper: Download File
+        function downloadFile(content, filename, type) {
+            const blob = new Blob([content], { type: type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+
+        // 1. Analytics Report: CSV of Features
+        async function generateAnalyticsReport() {
+            try {
+                // Ask user for preference
+                const userIp = prompt("Enter IP address to generate specific report (or leave empty for Global Report):");
+
+                let url = `${API_BASE_URL}/api/features`;
+                let filename = `analytics_report_global_${Date.now()}.csv`;
+
+                if (userIp && userIp.trim() !== "") {
+                    const ip = userIp.trim();
+                    url = `${API_BASE_URL}/api/features/ip/${ip}`;
+                    filename = `analytics_report_${ip}_${Date.now()}.csv`;
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.error) {
+                    alert(`Error: ${data.error}`);
+                    return;
+                }
+
+                // Calculate Interval
+                const start = data.window_start || new Date().toISOString();
+                const end = data.window_end || new Date().toISOString();
+
+                let csv = `# Generated By: NetGuardian Pro\n`;
+                csv += `# Report Type: Analytics Features\n`;
+                csv += `# Data Interval: ${start} - ${end}\n`;
+                csv += "Feature,Value\n"; // Header
+
+                for (const [key, value] of Object.entries(data)) {
+                    csv += `${key},${value}\n`;
+                }
+
+                downloadFile(csv, filename, 'text/csv');
+            } catch (error) {
+                alert('Failed to generate report: ' + error.message);
+            }
+        }
+
+        // 2. Security Report: CSV Log of Alerts
+        function generateSecurityReport() {
+            if (!recentAlerts || recentAlerts.length === 0) {
+                alert("No security alerts recorded in this session to export.");
+                return;
+            }
+
+            // Calculate Interval
+            const end = recentAlerts[0].timestamp || new Date().toISOString();
+            const start = recentAlerts[recentAlerts.length - 1].timestamp || end;
+
+            let csv = `# Generated By: NetGuardian Pro\n`;
+            csv += `# Report Type: Security Incident Log\n`;
+            csv += `# Data Interval: ${start} - ${end}\n`;
+            csv += "Timestamp,AttackType,SourceIP,Confidence,Severity\n";
+
+            recentAlerts.forEach(alert => {
+                const time = alert.timestamp || new Date().toISOString();
+                const type = (alert.attack_type || "Unknown").replace(/"/g, '""');
+                const ip = alert.src_ip || "N/A";
+                const conf = ((alert.confidence || 0) * 100).toFixed(1) + "%";
+                const sev = alert.severity || "INFO";
+
+                csv += `"${time}","${type}","${ip}","${conf}","${sev}"\n`;
+            });
+
+            downloadFile(csv, `security_log_${Date.now()}.csv`, 'text/csv');
+        }
+
+        // 3. Performance Report: CSV of Chart Data
+        function generatePerformanceReport() {
+            if (chartInstances['byteRateChart']) {
+                const chart = chartInstances['byteRateChart'];
+                const labels = chart.data.labels;
+                const data = chart.data.datasets[0].data;
+
+                if (labels.length === 0) {
+                    alert("No data points available.");
+                    return;
+                }
+
+                const start = labels[0];
+                const end = labels[labels.length - 1];
+
+                let csv = `# Generated By: NetGuardian Pro\n`;
+                csv += `# Report Type: Performance Metrics\n`;
+                csv += `# Data Interval: ${start} - ${end}\n`;
+                csv += "Timestamp,ByteRate(Bps)\n";
+
+                labels.forEach((label, index) => {
+                    csv += `${label},${data[index]}\n`;
+                });
+
+                downloadFile(csv, `performance_metrics_${Date.now()}.csv`, 'text/csv');
+            } else {
+                alert("Performance data not yet loaded. Please view the Performance tab first.");
+            }
+        }
+
+        // 4. Packets Export: CSV of Raw Packets
+        async function exportPackets() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/packets?limit=1000`);
+                const data = await response.json();
+
+                if (data.length === 0) {
+                    alert("No packets found to export.");
+                    return;
+                }
+
+                // Calculate Interval (Packets sorted DESC usually)
+                const end = data[0].timestamp || "N/A";
+                const start = data[data.length - 1].timestamp || "N/A";
+
+                let csv = `# Generated By: NetGuardian Pro\n`;
+                csv += `# Report Type: Raw Packet Dump\n`;
+                csv += `# Data Interval: ${start} - ${end}\n`;
+
+                const headers = Object.keys(data[0]).join(",");
+                csv += headers + "\n";
+
+                data.forEach(row => {
+                    const line = Object.values(row).map(v => {
+                        // Escape quotes and commas
+                        const s = String(v).replace(/"/g, '""');
+                        return `"${s}"`;
+                    }).join(",");
+                    csv += line + "\n";
+                });
+
+                downloadFile(csv, `packet_capture_${Date.now()}.csv`, 'text/csv');
+            } catch (error) {
+                alert('Export failed: ' + error.message);
+            }
+        }
+
+        // 5. Packet Search Filter
+        function filterPacketsTable() {
+            const input = document.getElementById("packetSearchInput");
+            const filter = input.value.toUpperCase();
+            const table = document.getElementById("packets-table");
+            const tr = table.getElementsByTagName("tr");
+            for (let i = 1; i < tr.length; i++) {
+                let text = tr[i].textContent || tr[i].innerText;
+                if (text.toUpperCase().indexOf(filter) > -1) {
+                    tr[i].style.display = "";
+                } else {
+                    tr[i].style.display = "none";
+                }
+            }
+        }
+
+        // 6. Security UI Updaters
+        function updateThreatLog(alert) {
+            const tbody = document.getElementById('threat-log-body');
+            if (!tbody) return;
+
+            const row = document.createElement('tr');
+            row.className = "border-b border-gray-700 hover:bg-gray-750 transition-colors";
+
+            let statusColor = "text-yellow-400";
+            if (alert.severity === 'CRITICAL') statusColor = "text-red-500 font-bold";
+            else if (alert.severity === 'HIGH') statusColor = "text-orange-400";
+            else if (alert.severity === 'LOW') statusColor = "text-blue-400";
+            else if (alert.severity === 'INFO') statusColor = "text-green-400";
+
+            row.innerHTML = `
+                <td class="px-4 py-2 text-gray-400 whitespace-nowrap">${new Date().toLocaleTimeString()}</td>
+                <td class="px-4 py-2 font-medium text-white">${alert.attack_type}</td>
+                <td class="px-4 py-2 font-mono text-xs text-blue-300">${alert.src_ip}</td>
+                <td class="px-4 py-2 text-gray-300">${(alert.confidence * 100).toFixed(0)}%</td>
+                <td class="px-4 py-2 ${statusColor}">${alert.severity}</td>
+            `;
+
+            if (tbody.children[0] && tbody.children[0].innerText.includes("No threats")) {
+                tbody.innerHTML = "";
+            }
+
+            tbody.insertBefore(row, tbody.firstChild);
+            if (tbody.children.length > 50) tbody.removeChild(tbody.lastChild);
+        }
+
+
         // ==================== INITIALIZE ====================
         async function initializeDashboard() {
             await loadDashboard();
@@ -2322,6 +2815,7 @@
 
         // Initialize dashboard data first
         initializeDashboard();
+        checkDBStatus();
 
         // Initialize WebSocket connection for real-time updates
         const dashboardWS = new DashboardWebSocket();

@@ -62,6 +62,25 @@ class PacketSniffer:
         self.attack_label = 'unknown'
         self.capture_duration = 180
         self.attacker_ip = ''
+        
+        # Interface mapping
+        self.interface_map = {}
+        self._build_interface_map()
+        
+    def _build_interface_map(self):
+        """Build map of raw GUIDs to friendly names"""
+        try:
+            from scapy.all import IFACES
+            for raw_name, iface in IFACES.items():
+                try:
+                    friendly = getattr(iface, 'description', '') or getattr(iface, 'name', '') or raw_name
+                    if friendly and friendly != raw_name:
+                        self.interface_map[raw_name] = friendly
+                except:
+                    pass
+        except:
+            pass
+
     
     def decode_tcp_flags(self, flag_value):
         """Convert TCP flag integer to readable flags string"""
@@ -112,9 +131,15 @@ class PacketSniffer:
         """Extract packet features"""
         self.packet_count += 1
         
+        # Resolve friendly name
+        friendly_interface = self.interface_map.get(interface, interface)
+        if friendly_interface == interface:
+             # Fallback cleanup if not in map
+             friendly_interface = interface.split('{')[0].strip('\\').replace('Device\\NPF_', '')
+        
         summary = {
             'timestamp': pkt.time,
-            'interface': interface,
+            'interface': friendly_interface,
             'src_mac': '',
             'dst_mac': '',
             'src_ip': '',
@@ -348,8 +373,13 @@ class PacketSniffer:
     
     def sniff_interface(self, interface):
         """Sniff packets on a specific interface"""
+        friendly = self.interface_map.get(interface, interface)
+        # Fallback cleanup
+        if friendly == interface:
+             friendly = interface.split('{')[0].strip('\\').replace('Device\\NPF_', '')
+             
         if self.callback:
-            self.callback(f"Started sniffing on: {interface}", "info")
+            self.callback(f"Started sniffing on: {friendly}", "info")
         
         def handle_packet(pkt):
             if self.should_stop_capture():

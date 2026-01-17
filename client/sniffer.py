@@ -12,6 +12,10 @@ import time
 import sys
 import importlib.util
 
+# --- Interface Mapping Global ---
+INTERFACE_MAP = {}
+
+
 # --- Configure Logging ---
 logging.basicConfig(
     level=logging.INFO,
@@ -93,9 +97,12 @@ def decode_tcp_flags(flag_value):
 
 # --- Packet Summary Function ---
 def packet_summary(pkt, interface):
+    # Resolve friendly name if available
+    friendly_interface = INTERFACE_MAP.get(interface, interface)
+    
     summary = {
         'timestamp': pkt.time,
-        'interface': interface,
+        'interface': friendly_interface,
         'src_ip': None,
         'dst_ip': None,
         'protocol': None,
@@ -382,7 +389,8 @@ class PacketBuffer:
 
 def sniff_interface(interface, buffer):
     """Sniff packets on interface and add to buffer"""
-    logger.info(f"Started sniffing on {interface}")
+    friendly = INTERFACE_MAP.get(interface, interface)
+    logger.info(f"Started sniffing on {friendly} ({interface})")
     
     def handle_packet(pkt):
         summary = packet_summary(pkt, interface)
@@ -482,6 +490,39 @@ def parse_interface_selection(selection: str, interfaces: list) -> list:
         logger.error(f"Invalid selection format: {selection}")
         return []
 
+def build_interface_map():
+    """Populate the global INTERFACE_MAP with raw -> friendly name mappings"""
+    from scapy.all import IFACES
+    global INTERFACE_MAP
+    
+    # Clear existing map
+    INTERFACE_MAP.clear()
+    
+    # 1. Add mappings from Scapy's IFACES (most reliable for friendly names)
+    for raw_name, iface in IFACES.items():
+        try:
+            friendly = getattr(iface, 'description', '') or getattr(iface, 'name', '') or raw_name
+            if friendly and friendly != raw_name:
+                INTERFACE_MAP[raw_name] = friendly
+        except:
+            pass
+            
+    # 2. Add cleanups for any raw names from get_if_list() not yet mapped
+    # e.g., remove \Device\NPF_ prefix if no better name found
+    try:
+        raw_list = get_if_list()
+        for raw_name in raw_list:
+            if raw_name not in INTERFACE_MAP:
+                # Try simple string cleanup as fallback
+                clean_name = raw_name.split('{')[0].strip('\\').replace('Device\\NPF_', '')
+                if clean_name != raw_name:
+                    INTERFACE_MAP[raw_name] = clean_name
+    except:
+        pass
+        
+    logger.info(f"Mapped {len(INTERFACE_MAP)} interfaces to friendly names")
+
+
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(
@@ -489,15 +530,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python sniffer.py                    # Interactive mode - prompts for interface
-  python sniffer.py -i all             # Sniff on ALL interfaces
-  python sniffer.py -i 0               # Same as 'all'
-  python sniffer.py -i 1               # Sniff only on interface #1
-  python sniffer.py -i 1,2,4           # Sniff on interfaces #1, #2, and #4
-  python sniffer.py --list             # Just list interfaces and exit
-  python sniffer.py -i 1 --send        # Sniff AND upload to server
-        """
+  python sniffer.py                    # Interactive mode
+  python sniffer.py -i 1 --send        # Legacy HTTP mode
+  python sniffer.py -i 1 --send --grpc # NEW: High-performance gRPC mode
+"""
     )
+
     parser.add_argument(
         '-i', '--interfaces',
         type=str,
@@ -526,11 +564,19 @@ Examples:
         action='store_true',
         help="Also start the sender to upload files to server (runs in background)"
     )
+    parser.add_argument(
+        '--grpc',
+        action='store_true',
+        help="Use gRPC (Protobuf) instead of HTTP for sending. Requires --send."
+    )
     
     args = parser.parse_args()
     
     # Get all interfaces
     all_interfaces = get_if_list()
+    
+    # Build the friendly name map
+    build_interface_map()
     
     # Just list interfaces and exit
     if args.list:
@@ -565,7 +611,8 @@ Examples:
     logger.info(f"Buffer limit: {args.buffer_size} packets")
     logger.info(f"Selected interfaces ({len(selected_interfaces)}):")
     for iface in selected_interfaces:
-        logger.info(f"  → {iface}")
+        friendly = INTERFACE_MAP.get(iface, iface)
+        logger.info(f"  → {friendly}")
     logger.info("=" * 60)
     
     # Start sender in background if --send flag is used
@@ -574,15 +621,27 @@ Examples:
     if args.send:
         try:
             # Import sender module from same directory
-            sender_path = os.path.join(SCRIPT_DIR, 'sender.py')
-            spec = importlib.util.spec_from_file_location('sender', sender_path)
+            if args.grpc:
+                sender_path = os.path.join(SCRIPT_DIR, 'grpc_sender.py')
+                module_name = 'grpc_sender'
+                logger.info("Using HIGH-PERFORMANCE gRPC SENDER")
+            else:
+                sender_path = os.path.join(SCRIPT_DIR, 'sender.py')
+                module_name = 'sender'
+                logger.info("Using STANDARD HTTP SENDER")
+
+            spec = importlib.util.spec_from_file_location(module_name, sender_path)
             sender_module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(sender_module)
             
             # Start sender in background thread
             logger.info("Starting sender in background...")
+            
+            # grpc_sender.py has a run() function, sender.py has monitor_and_upload()
+            target_func = sender_module.run if args.grpc else sender_module.monitor_and_upload
+            
             sender_thread = threading.Thread(
-                target=sender_module.monitor_and_upload,
+                target=target_func,
                 daemon=True
             )
             sender_thread.start()
@@ -611,7 +670,10 @@ Examples:
     # Stop sender gracefully if it was started
     if sender_module is not None:
         logger.info("Stopping sender...")
-        sender_module.stop_sender()
+        if hasattr(sender_module, 'stop_sender'):
+            sender_module.stop_sender()
+        # gRPC daemon thread will be killed automatically on exit
+
     
     # Save final buffer before exit
     logger.info("Saving final buffer...")
