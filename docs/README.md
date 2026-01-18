@@ -140,43 +140,8 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
   - Real-time dashboard with charts
   - JSON APIs for alerts and features
 
-### **sender.py** (Lines: 260)
-- **Language:** Python
-- **Dependencies:** requests
-- **Requires:** Network access to server
-- **Input:** JSON files from `logs/pending_upload/`
-- **Key Features:**
-  - Continuous file monitoring
-  - HTTP uploads with retry
-  - Exponential backoff
-  - Failed upload queue
-
-### **main.py** (Lines: 351)
-- **Language:** Python (FastAPI)
-- **Dependencies:** FastAPI, SQLAlchemy, PostgreSQL
-- **Port:** 8000 (default)
-- **Key Features:**
-  - `/ingest_packets` endpoint
-  - Web dashboards
-  - JSON APIs
-  - Health checks
-
-
----
-
-## 🐛 Troubleshooting Guide
-
-### Issue: Packets not being captured
-→ Read: [sniffer_explained.md - Troubleshooting section](sniffer_explained.md#-troubleshooting)
-
-### Issue: Files not being uploaded
-→ Read: [sender_explained.md - Troubleshooting section](sender_explained.md#-troubleshooting)
-
-### Issue: Server errors or slow responses
-→ Read: [main_explained.md - Troubleshooting section](main_explained.md#-troubleshooting)
-
 ### Issue: Flows not being created
-→ Read: [aggregator_explained.md - Troubleshooting section](aggregator_explained.md#-troubleshooting)
+→ Read: [aggregation_strategy.md](aggregation_strategy.md)
 
 ---
 
@@ -184,12 +149,12 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 
 ### Configuration Files
 
-| Setting | File | Line | Default | Purpose |
-|---------|------|------|---------|---------|
-| Save interval | sniffer.py | CLI `-s` | 5s | How often to save JSON |
-| Server URL | sender.py | 36 | `http://...` | Upload destination |
-| Poll interval | sender.py | 37 | 1s | File check frequency |
-| Database URL | main.py | 21 | `postgresql://...` | Database connection |
+| Setting | File | Location | Default |
+|---------|------|----------|---------|
+| Database URL | .env | `DATABASE_URL` | `postgresql://...` |
+| Server URL | .env | `SERVER_URL` | `http://localhost:8000/ingest` |
+| ML Model Path | .env | `ML_MODEL_PATH` | `server/models/xgboost_model.json` |
+| Save interval | sniffer.py | CLI `-s` | 5s |
 
 ### Important Directories
 
@@ -220,22 +185,17 @@ Welcome to the Network Traffic Analyzer documentation! This index will guide you
 
 ## 🔄 Data Flow Summary
 
-```
-Network Traffic
-    ↓
-[sniffer.py] → Capture & extract features
-    ↓
-JSON files (logs/pending_upload/)
-    ↓
-[sender.py] → Monitor & upload to /ingest
-    ↓
-HTTP POST
-    ↓
-[main.py] → Receive, store, aggregate, predict
-    ↓
-PostgreSQL (raw_packets, aggregated_features, detected_alerts)
-    ↓
-Web Dashboard (main.py)
+```mermaid
+graph TD
+    Network[Network Traffic] --> Sniffer[sniffer.py]
+    Sniffer -->|JSON Files| Pending[logs/pending_upload/]
+    Pending --> Sender[sender.py]
+    Sender -->|HTTP POST /ingest| Server[main.py]
+    
+    Server -->|Store| DB[(PostgreSQL)]
+    Server -->|Real-Time Push| WS[WebSocket /ws/dashboard]
+    WS --> Dashboard[Web UI]
+    DB -->|Historical Data| Dashboard
 ```
 
 ---
@@ -243,12 +203,8 @@ Web Dashboard (main.py)
 ## 📝 Document Metadata
 
 - **Created:** 2025-11-29
-- **Total Documentation Files:** 3 (sniffer, sender, main)
-- **Total Lines Documented:** ~2000+ lines
-- **Last Updated:** 2025-12-23
-
----
+- **Last Updated:** 2026-01-18
+- **Total Documentation Files:** 12+
 
 For the complete project overview, see [README.md](../README.md)  
-For deployment instructions, see [DEPLOYMENT.md](../DEPLOYMENT.md)  
-For architecture details, see [SEPARATED_ARCHITECTURE.md](../SEPARATED_ARCHITECTURE.md)
+For deployment instructions, see [DEPLOYMENT.md](../DEPLOYMENT.md)

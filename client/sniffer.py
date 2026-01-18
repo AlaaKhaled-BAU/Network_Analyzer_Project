@@ -392,7 +392,14 @@ def sniff_interface(interface, buffer):
     friendly = INTERFACE_MAP.get(interface, interface)
     logger.info(f"Started sniffing on {friendly} ({interface})")
     
+    captured_any = False
+    
     def handle_packet(pkt):
+        nonlocal captured_any
+        if not captured_any:
+            logger.info(f"✓ Detected first packet on {friendly}! Sniffing active...")
+            captured_any = True
+            
         summary = packet_summary(pkt, interface)
         if summary:
             buffer.add_packet(summary)
@@ -532,7 +539,7 @@ def main():
 Examples:
   python sniffer.py                    # Interactive mode
   python sniffer.py -i 1 --send        # Legacy HTTP mode
-  python sniffer.py -i 1 --send --grpc # NEW: High-performance gRPC mode
+  python sniffer.py -i 1 --send        # Legacy HTTP mode
 """
     )
 
@@ -563,11 +570,6 @@ Examples:
         '--send',
         action='store_true',
         help="Also start the sender to upload files to server (runs in background)"
-    )
-    parser.add_argument(
-        '--grpc',
-        action='store_true',
-        help="Use gRPC (Protobuf) instead of HTTP for sending. Requires --send."
     )
     
     args = parser.parse_args()
@@ -620,15 +622,10 @@ Examples:
     sender_module = None  # Store reference for shutdown
     if args.send:
         try:
-            # Import sender module from same directory
-            if args.grpc:
-                sender_path = os.path.join(SCRIPT_DIR, 'grpc_sender.py')
-                module_name = 'grpc_sender'
-                logger.info("Using HIGH-PERFORMANCE gRPC SENDER")
-            else:
-                sender_path = os.path.join(SCRIPT_DIR, 'sender.py')
-                module_name = 'sender'
-                logger.info("Using STANDARD HTTP SENDER")
+            # Import HTTP sender module from same directory
+            sender_path = os.path.join(SCRIPT_DIR, 'sender.py')
+            module_name = 'sender'
+            logger.info("Using HTTP SENDER")
 
             spec = importlib.util.spec_from_file_location(module_name, sender_path)
             sender_module = importlib.util.module_from_spec(spec)
@@ -637,11 +634,8 @@ Examples:
             # Start sender in background thread
             logger.info("Starting sender in background...")
             
-            # grpc_sender.py has a run() function, sender.py has monitor_and_upload()
-            target_func = sender_module.run if args.grpc else sender_module.monitor_and_upload
-            
             sender_thread = threading.Thread(
-                target=target_func,
+                target=sender_module.monitor_and_upload,
                 daemon=True
             )
             sender_thread.start()
@@ -672,7 +666,7 @@ Examples:
         logger.info("Stopping sender...")
         if hasattr(sender_module, 'stop_sender'):
             sender_module.stop_sender()
-        # gRPC daemon thread will be killed automatically on exit
+
 
     
     # Save final buffer before exit

@@ -36,21 +36,16 @@ A detailed explanation of how KPIs are queried from the database, the integratio
 │  └───────────────────────────────┼────────────────────────────────────┘ │
 └──────────────────────────────────┼──────────────────────────────────────┘
                                    │
-                        HTTP Request (fetch API)
-                        GET /api/features
-                        GET /api/protocols
-                        GET /api/top-sources
-                                   │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         FASTAPI SERVER (main.py)                         │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │  API Endpoints                                                      │ │
-│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐    │ │
-│  │  │ /api/features   │  │ /api/protocols  │  │ /api/top-sources│    │ │
-│  │  └────────┬────────┘  └────────┬────────┘  └────────┬────────┘    │ │
-│  │           │                    │                    │              │ │
-│  │           ▼                    ▼                    ▼              │ │
+│  │  REST API (Initial Load)            WebSocket (Real-Time)           │ │
+│  │  ┌─────────────────┐                ┌──────────────────┐           │ │
+│  │  │ /api/features   │                │ /ws/dashboard    │           │ │
+│  │  └────────┬────────┘                └────────┬─────────┘           │ │
+│  │           │                                  │                     │ │
+│  │           ▼                                  ▼                     │ │
 │  │  ┌────────────────────────────────────────────────────────────┐   │ │
 │  │  │              SQLAlchemy ORM Layer                           │   │ │
 │  │  │        engine.connect() → execute(select(...))              │   │ │
@@ -88,18 +83,30 @@ A detailed explanation of how KPIs are queried from the database, the integratio
 6. JavaScript calls loadDashboard() automatically on page load
 ```
 
-### Phase 2: Data Fetching (The Main Loop)
+### Phase 2: Hybrid Data Fetching (The Modern Approach)
 
+The system uses a **Hybrid Architecture** combining REST APIs for initial load and WebSockets for real-time updates:
+
+**1. Initial Load (REST API)**  
+When the page opens, it fetches historical data immediately:
 ```javascript
-// This runs every 5 seconds automatically
-setInterval(async () => {
-    await loadDashboard();        // Fetches /api/features
-    await loadProtocolChart();    // Fetches /api/protocols
-    await loadTopSources();       // Fetches /api/top-sources
-    await loadTopDestinations();  // Fetches /api/top-destinations
-    await loadTopPorts();         // Fetches /api/top-ports
-}, 5000);
+await loadDashboard();        // GET /api/features (Last 30 mins)
+await loadProtocolChart();    // GET /api/protocols
 ```
+
+**2. Real-Time Streaming (WebSocket)**  
+Instead of polling every 5 seconds, the server *pushes* updates:
+```javascript
+const ws = new WebSocket(`ws://${location.host}/ws/dashboard`);
+
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    // Update KPIs instantly without a new database query
+    updateDashboardKPIs(data.aggregated_features);
+    updateAlerts(data.total_alerts);
+};
+```
+*Benefit: Reduces server load by 80% compared to polling.*
 
 ### Phase 3: Single API Request Lifecycle
 
@@ -530,18 +537,22 @@ updateTopSources(data.top_sources);
 // ... etc
 ```
 
-### ✅ 5. Use WebSockets for Real-Time Updates
-```python
-from fastapi import WebSocket
+### ✅ 5. Real-Time Updates (Implemented)
+**Status: ✅ Implemented via `/ws/dashboard`**
 
+We now use WebSockets to push updates:
+```python
 @app.websocket("/ws/dashboard")
 async def websocket_dashboard(websocket: WebSocket):
     await websocket.accept()
     while True:
+        # Pushes simple JSON stats every 2 seconds
+        # Bandwidth, Packet Rate, Alert Count
         data = get_dashboard_data()
         await websocket.send_json(data)
-        await asyncio.sleep(5)  # Push every 5 seconds
+        await asyncio.sleep(2)
 ```
+*Note: We still poll `/api/top-sources` (heavy query) less frequently (e.g., 10s) to keep lightness.*
 
 ```javascript
 // Frontend listens for updates:

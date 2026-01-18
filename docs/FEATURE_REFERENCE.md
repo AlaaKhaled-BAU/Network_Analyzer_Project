@@ -161,6 +161,19 @@ Features ranked by typical importance in XGBoost model:
 7. `ssh_connection_attempts` - Brute force indicator
 ---
 
+## 🎯 Port Category Features (3 columns)
+
+Features distinguishing between common traffic and remote access attempts.
+
+| Feature | Description | Why Important | Associated Attacks |
+|---------|-------------|---------------|-------------------|
+| `tcp_ports_hit` | Unique TCP ports hit (excluding remote conn) | Random scanning vs targeted traffic | **Port Scan**, **DDoS** |
+| `udp_ports_hit` | Unique UDP ports hit (excluding remote conn) | UDP flood randomization | **UDP Flood** |
+| `remote_conn_port_hits` | Hits to remote access ports | Direct attempts to control server | **SSH Brute Force**, **RDP Attack** |
+| *Note* | Remote access ports tracked: | 22 (SSH), 23 (Telnet), 3389 (RDP), 5900 (VNC), 6000-6063 (X11) |
+
+---
+
 ## ⚠️ Duplicate & Low-Importance Features
 
 Features that may be redundant, derived from others, or have low ML importance.

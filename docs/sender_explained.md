@@ -56,12 +56,14 @@ PENDING_DIR = LOGS_DIR / 'pending_upload'   # Watch this folder
 FAILED_DIR = LOGS_DIR / 'failed_uploads'    # Failed uploads
 PROCESSED_DIR = LOGS_DIR / 'processed'      # Successful uploads
 
+```python
 # Server configuration
-SERVER_URL = "http://26.178.118.134:8000/ingest"
+# Loaded from .env file (with defaults)
+SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000/ingest")
 POLL_INTERVAL = 1   # Check for new files every 1 second
 MAX_RETRIES = 3     # Retry failed uploads 3 times
 RETRY_DELAY = 5     # Wait 5 seconds before retry
-BATCH_SIZE = 1000   # Upload 1000 packets per HTTP request (optimal for PostgreSQL)
+BATCH_SIZE = 1000   # Upload 1000 packets per HTTP request
 ```
 
 **What you can change:**

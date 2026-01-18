@@ -216,30 +216,27 @@ Path(base_filename + '.ready').touch()  # Signal completion
 **Purpose:** Manages in-memory packet storage and periodic saves
 
 **Attributes:**
-- `buffer` - List of packet dictionaries
+- `packet_queue` - Thread-safe queue for packets
 - `save_interval` - How often to save (seconds)
 - `last_save_time` - Timestamp of last save
-- `lock` - Thread lock for safe concurrent access
+- `_save_lock` - Thread lock for safe concurrent saves
 
 **Key Methods:**
 
 #### `add_packet(packet)`
 ```python
 def add_packet(self, packet):
-    with self.lock:  # Thread-safe
-        self.buffer.append(packet)
+    self.packet_queue.put(packet)  # Thread-safe put
 ```
 Called by packet capture threads to add new packets.
 
 #### `save_buffer()`
 ```python
 def save_buffer(self):
-    with self.lock:
-        packets_to_save = self.buffer.copy()
-        self.buffer.clear()  # Clear buffer
+    with self._save_lock:
+        self._save_buffer_internal()
     
-    # Save in background thread (non-blocking)
-    threading.Thread(target=save_to_json_atomic, ...).start()
+    # Internal method drains queue and saves in background thread
 ```
 Saves current buffer to file and clears it.
 

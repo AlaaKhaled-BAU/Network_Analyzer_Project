@@ -109,16 +109,6 @@
 
                 <!-- Right Side -->
                 <div class="flex items-center space-x-6">
-                    <!-- Live Mode Toggle -->
-                    <div class="flex items-center space-x-2">
-                        <span class="text-sm text-gray-400">Live</span>
-                        <button id="liveModeToggle" onclick="toggleLiveMode()"
-                            class="w-10 h-6 bg-gray-700 rounded-full relative transition-colors duration-200 focus:outline-none">
-                            <div class="w-4 h-4 bg-white rounded-full absolute left-1 top-1 transition-transform duration-200"
-                                id="liveModeKnob"></div>
-                        </button>
-                    </div>
-
                     <span id="last-updated" class="text-sm text-gray-400 hidden md:block">--:--:--</span>
 
                     <div class="flex items-center space-x-2 bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
@@ -139,10 +129,12 @@
             <div class="flex justify-between items-center mb-8">
                 <h1 class="text-3xl font-bold">Traffic Dashboard</h1>
                 <div class="flex space-x-3">
-                    <select class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm">
-                        <option>Last 24 hours</option>
-                        <option>Last 7 days</option>
-                        <option>Last 30 days</option>
+                    <select id="timeRangeSelector" onchange="updateTimeRange()"
+                        class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm">
+                        <option value="0.5">Last 30 Minutes</option>
+                        <option value="24" selected>Last 24 hours</option>
+                        <option value="168">Last 7 days</option>
+                        <option value="720">Last 30 days</option>
                     </select>
                     <button onclick="exportExecutiveSummary()"
                         class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center space-x-2">
@@ -177,7 +169,7 @@
                         <div>
                             <h3 class="text-gray-300 text-sm">Avg Traffic</h3>
                             <p id="avgTraffic" class="text-3xl font-bold mt-2">--</p>
-                            <p class="text-xs text-gray-400 mt-1">Last 24 hours</p>
+                            <p id="avgTrafficLabel" class="text-xs text-gray-400 mt-1">Last 24 hours</p>
                         </div>
                         <div class="bg-purple-500 p-3 rounded-lg">
                             <i data-feather="activity" class="w-6 h-6"></i>
@@ -266,9 +258,9 @@
             <!-- Charts Row 2 -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                    <h3 class="text-lg font-semibold mb-4">Inbound vs Outbound Traffic</h3>
+                    <h3 class="text-lg font-semibold mb-4">Protocol Traffic Trends</h3>
                     <div class="h-80">
-                        <canvas id="inboundOutboundChart"></canvas>
+                        <canvas id="protocolTrendChart"></canvas>
                     </div>
                 </div>
                 <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
@@ -455,6 +447,7 @@
                     <h3 class="text-lg font-semibold">All 63 Features</h3>
                     <div class="flex gap-2 w-full md:w-auto mt-4 md:mt-0">
                         <input type="text" id="featureIpInput" placeholder="Filter by IP..."
+                            onkeyup="if(event.key==='Enter') loadIPFeatures()"
                             class="bg-gray-700 text-white px-3 py-1 rounded text-sm border border-gray-600 focus:outline-none focus:border-blue-500 w-full md:w-48">
                         <button onclick="loadIPFeatures()"
                             class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm text-white">Inspect</button>
@@ -824,8 +817,22 @@
             <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
                 <h1 class="text-3xl font-bold">Captured Packets</h1>
                 <div class="flex gap-4 w-full md:w-auto">
+                    <div class="relative w-full md:w-48">
+                        <select id="packetProtocolFilter" onchange="filterPacketsTable()"
+                            class="appearance-none w-full bg-gray-700 text-white px-4 py-2 pr-8 rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 text-sm">
+                            <option value="All">All Protocols</option>
+                            <option value="TCP">TCP</option>
+                            <option value="UDP">UDP</option>
+                            <option value="ICMP">ICMP</option>
+                            <option value="ARP">ARP</option>
+                        </select>
+                        <div
+                            class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                            <i data-feather="chevron-down" class="w-4 h-4"></i>
+                        </div>
+                    </div>
                     <div class="relative w-full md:w-64">
-                        <input type="text" id="packetSearchInput" placeholder="Search IP, Protocol..."
+                        <input type="text" id="packetSearchInput" placeholder="Search IP..."
                             class="pl-10 pr-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500 w-full text-sm"
                             onkeyup="filterPacketsTable()">
                         <div class="absolute left-3 top-2.5 text-gray-400">
@@ -893,9 +900,202 @@
         // Use empty string for same-origin requests when served by FastAPI
         const API_BASE_URL = '';
         const TELEGRAM_BOT_URL = 'http://localhost:5000';  // Telegram bot server
+        const MAX_BANDWIDTH_BPS = 1000000000; // 1 Gbps Interface Speed (Configurable)
         let chartInstances = {};
         let currentPacketPage = 1;
         let botStatsInterval;
+
+        // ==================== WEBSOCKET FOR REAL-TIME UPDATES ====================
+        class DashboardWebSocket {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.reconnectDelay = 3000;
+                this.pollingFallback = null;
+            }
+
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`;
+
+                try {
+                    this.ws = new WebSocket(wsUrl);
+
+                    this.ws.onopen = () => {
+                        console.log('✅ WebSocket connected');
+                        this.isConnected = true;
+                        this.reconnectAttempts = 0;
+                        this.updateConnectionStatus(true);
+                    };
+
+                    this.ws.onmessage = (event) => {
+                        this.handleMessage(JSON.parse(event.data));
+                    };
+
+                    this.ws.onclose = () => {
+                        console.log('❌ WebSocket disconnected');
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                        this.scheduleReconnect();
+                    };
+
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.isConnected = false;
+                    };
+                } catch (error) {
+                    console.error('Failed to create WebSocket:', error);
+                    this.scheduleReconnect();
+                }
+            }
+
+            handleMessage(data) {
+                if (data.type === 'dashboard_update') {
+                    this.updateDashboardStats(data.payload);
+                } else if (data.type === 'alert') {
+                    this.handleSecurityAlert(data.payload);
+                } else if (data.type === 'packets') {
+                    this.updatePacketTable(data.payload);
+                }
+            }
+
+            updateDashboardStats(stats) {
+                // Update stat cards without flickering
+                if (stats.packet_count !== undefined) {
+                    document.getElementById('totalPackets').textContent = formatNumber(stats.packet_count);
+                }
+                if (stats.byte_rate_bps !== undefined) {
+                    document.getElementById('avgTraffic').textContent = formatBytes(stats.byte_rate_bps);
+                    document.getElementById('peakTraffic').textContent = formatBytes(stats.byte_rate_bps * 1.5);
+                }
+                if (stats.tcp_count !== undefined) {
+                    document.getElementById('activeConnections').textContent = formatNumber(stats.tcp_count);
+                }
+                if (stats.packet_rate_pps !== undefined) {
+                    document.getElementById('packetsSec').textContent = stats.packet_rate_pps.toFixed(0);
+                }
+
+                // Update charts in-place (no flicker)
+                this.updateChartsInPlace(stats);
+                updateTimestamp();
+            }
+
+            updateChartsInPlace(stats) {
+                // Update traffic volume chart in-place
+                if (chartInstances.trafficVolumeChart && stats.byte_rate_bps !== undefined) {
+                    const chart = chartInstances.trafficVolumeChart;
+                    const now = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+
+                    // Add new data point
+                    chart.data.labels.push(now);
+                    chart.data.datasets[0].data.push(stats.byte_rate_bps / 1000000);
+
+                    // Keep only last 24 points
+                    if (chart.data.labels.length > 24) {
+                        chart.data.labels.shift();
+                        chart.data.datasets[0].data.shift();
+                    }
+
+                    chart.update('none'); // 'none' for no animation = instant
+                }
+
+                // Update protocol chart if data available
+                if (chartInstances.protocolChart && stats.protocol_counts) {
+                    const chart = chartInstances.protocolChart;
+                    chart.data.datasets[0].data = Object.values(stats.protocol_counts);
+                    chart.update('none');
+                }
+            }
+
+            handleSecurityAlert(alert) {
+                // Update security header
+                updateSecurityAlert(alert);
+                // Add to threat log
+                updateThreatLog(alert);
+                // Store for reporting
+                recentAlerts.unshift(alert);
+                if (recentAlerts.length > 100) recentAlerts.pop();
+            }
+
+            updatePacketTable(packets) {
+                // This would update the packets table dynamically
+                // For now, we'll let the pagination handle it
+            }
+
+            updateConnectionStatus(connected) {
+                const indicator = document.getElementById('db-status-indicator');
+                const text = document.getElementById('db-status-text');
+                if (connected) {
+                    indicator.className = 'w-2 h-2 bg-green-500 rounded-full animate-pulse';
+                    text.textContent = 'Live';
+                    text.className = 'text-xs text-green-400';
+                } else {
+                    indicator.className = 'w-2 h-2 bg-yellow-500 rounded-full';
+                    text.textContent = 'Reconnecting...';
+                    text.className = 'text-xs text-yellow-400';
+                }
+            }
+
+            scheduleReconnect() {
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    this.reconnectAttempts++;
+                    console.log(`Reconnecting in ${this.reconnectDelay}ms (attempt ${this.reconnectAttempts})`);
+                    setTimeout(() => this.connect(), this.reconnectDelay);
+                } else {
+                    console.error('❌ Max reconnection attempts reached. Falling back to HTTP polling.');
+                    this.startPollingFallback();
+                }
+            }
+
+            ping() {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify({ type: 'ping' }));
+                }
+            }
+
+            showToast(message, type = 'info') {
+                const colors = {
+                    info: 'bg-blue-600',
+                    success: 'bg-green-600',
+                    warning: 'bg-yellow-600',
+                    error: 'bg-red-600'
+                };
+                const toast = document.createElement('div');
+                toast.className = `fixed bottom-4 right-4 p-3 rounded-lg shadow-lg z-50 ${colors[type]} text-white text-sm`;
+                toast.textContent = message;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 3000);
+            }
+
+            refreshDashboard() {
+                const activePage = document.querySelector('.page.active')?.id;
+                if (activePage === 'dashboard-page') {
+                    loadDashboard();
+                }
+            }
+
+            refreshSecurityPage() {
+                const activePage = document.querySelector('.page.active')?.id;
+                if (activePage === 'security-page') {
+                    loadSecurity();
+                }
+            }
+
+            startPollingFallback() {
+                if (this.pollingFallback) return;
+                console.log('⚠️ Starting HTTP polling fallback');
+                this.showToast('WebSocket unavailable. Using polling mode.', 'warning');
+                this.pollingFallback = setInterval(() => {
+                    const activePage = document.querySelector('.page.active')?.id;
+                    if (activePage === 'dashboard-page') initializeDashboard();
+                    else if (activePage === 'analytics-page') loadAnalytics();
+                    else if (activePage === 'security-page') loadSecurity();
+                    else if (activePage === 'performance-page') loadPerformance();
+                }, 5000);
+            }
+        }
 
         // ==================== TELEGRAM BOT FUNCTIONS ====================
         async function setTelegramWebhook() {
@@ -1057,7 +1257,22 @@
             feather.replace();
         }
 
+        function viewIPDetails(ip) {
+            showPage('analytics');
+            const input = document.getElementById('featureIpInput');
+            if (input) {
+                input.value = ip;
+                loadIPFeatures();
+            }
+        }
+
         // ==================== UTILITY FUNCTIONS ====================
+        function toTitleCase(str) {
+            return str.replace(/_/g, ' ').replace(/\w\S*/g, (txt) => {
+                return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+            });
+        }
+
         function formatBytes(bytes) {
             if (!bytes || bytes === 0) return '0 B';
             const k = 1024;
@@ -1167,10 +1382,26 @@
             return health;
         }
 
-        function calculateBandwidthUtilization(features, maxBandwidth = 1000000000) {
+        function calculateBandwidthUtilization(features, maxBandwidth = MAX_BANDWIDTH_BPS) {
             const currentBps = (features.byte_rate_bps || 0) * 8;
             const utilization = (currentBps / maxBandwidth) * 100;
             return utilization.toFixed(2);
+        }
+
+        function updateTimeRange() {
+            const selector = document.getElementById('timeRangeSelector');
+            const hours = selector ? selector.value : 24;
+
+            const label = document.getElementById('avgTrafficLabel');
+            if (label) {
+                if (hours == 0.5) label.textContent = 'Last 30 Minutes';
+                else if (hours == 24) label.textContent = 'Last 24 hours';
+                else if (hours == 168) label.textContent = 'Last 7 days';
+                else if (hours == 720) label.textContent = 'Last 30 days';
+            }
+
+            loadTrafficVolumeChart(hours);
+            loadProtocolTrendChart();
         }
 
         // ==================== DASHBOARD PAGE ====================
@@ -1181,14 +1412,22 @@
 
                 if (data.error) return;
 
-                document.getElementById('peakTraffic').textContent = formatBytes((data.byte_rate_bps || 0) * 1.5);
+                document.getElementById('peakTraffic').textContent = formatBytes(data.peak_byte_rate || data.byte_rate_bps || 0);
                 document.getElementById('avgTraffic').textContent = formatBytes(data.byte_rate_bps || 0);
                 document.getElementById('totalPackets').textContent = formatNumber(data.packet_count || 0);
                 document.getElementById('activeConnections').textContent = formatNumber(data.tcp_count || 0);
 
-                document.getElementById('packetLoss').textContent = ((data.connection_failure_rate || 0) * 100).toFixed(1) + '%';
-                document.getElementById('avgLatency').textContent = data.inter_arrival_time_mean ?
-                    ((data.inter_arrival_time_mean || 0) * 1000).toFixed(0) + 'ms' : '0ms';
+                const loss = (data.connection_failure_rate || 0) * 100;
+                const lossEl = document.getElementById('packetLoss');
+                lossEl.textContent = loss.toFixed(1) + '%';
+                if (loss > 1.0) lossEl.classList.replace('text-gray-300', 'text-red-500') || lossEl.classList.add('text-red-500');
+                else lossEl.classList.remove('text-red-500');
+
+                const latency = (data.inter_arrival_time_mean || 0) * 1000;
+                const latEl = document.getElementById('avgLatency');
+                latEl.textContent = latency.toFixed(0) + 'ms';
+                if (latency > 100) latEl.classList.replace('text-gray-300', 'text-red-500') || latEl.classList.add('text-red-500');
+                else latEl.classList.remove('text-red-500');
                 document.getElementById('bandwidthUsage').textContent = calculateBandwidthUtilization(data) + '%';
                 document.getElementById('tcpTraffic').textContent = Math.round(((data.tcp_count || 0) / Math.max(1, data.packet_count)) * 100) + '%';
                 document.getElementById('packetsSec').textContent = (data.packet_rate_pps || 0).toFixed(0);
@@ -1197,6 +1436,11 @@
             } catch (error) {
                 console.error('Error loading dashboard:', error);
             }
+        }
+
+        function updateTimestamp() {
+            const el = document.getElementById('last-updated');
+            if (el) el.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
         }
 
         async function loadProtocolChart() {
@@ -1236,10 +1480,10 @@
             }
         }
 
-        async function loadTrafficVolumeChart() {
+        async function loadTrafficVolumeChart(hours = 24) {
             try {
                 // USE REAL DATA from /api/traffic-history
-                const response = await fetch(`${API_BASE_URL}/api/traffic-history?hours=24`);
+                const response = await fetch(`${API_BASE_URL}/api/traffic-history?hours=${hours}`);
                 const data = await response.json();
 
                 destroyChart('trafficVolumeChart');
@@ -1277,45 +1521,86 @@
             }
         }
 
-        async function loadInboundOutboundChart() {
+        async function loadProtocolTrendChart() {
             try {
-                // USE REAL DATA from /api/traffic-direction
-                const response = await fetch(`${API_BASE_URL}/api/traffic-direction`);
+                const selector = document.getElementById('timeRangeSelector');
+                const hours = selector ? selector.value : 24;
+
+                const response = await fetch(`${API_BASE_URL}/api/traffic-history?hours=${hours}`);
                 const data = await response.json();
 
-                destroyChart('inboundOutboundChart');
+                destroyChart('protocolTrendChart');
 
-                const ctx = document.getElementById('inboundOutboundChart');
-                chartInstances.inboundOutboundChart = new Chart(ctx, {
-                    type: 'bar',
+                const ctx = document.getElementById('protocolTrendChart');
+                if (!ctx) return;
+
+                chartInstances.protocolTrendChart = new Chart(ctx, {
+                    type: 'line',
                     data: {
-                        labels: ['Inbound', 'Outbound'],
-                        datasets: [{
-                            label: 'Traffic',
-                            data: [data.inbound_bytes || 0, data.outbound_bytes || 0],
-                            backgroundColor: ['#3b82f6', '#ec4899'],
-                            borderRadius: 8
-                        }]
+                        labels: data.labels || [],
+                        datasets: [
+                            {
+                                label: 'TCP',
+                                data: data.tcp_rates || [],
+                                borderColor: '#3b82f6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.3)',
+                                fill: true,
+                                tension: 0.4
+                            },
+                            {
+                                label: 'UDP',
+                                data: data.udp_rates || [],
+                                borderColor: '#ec4899',
+                                backgroundColor: 'rgba(236, 72, 153, 0.3)',
+                                fill: true,
+                                tension: 0.4
+                            },
+                            {
+                                label: 'ICMP',
+                                data: data.icmp_rates || [],
+                                borderColor: '#f59e0b',
+                                backgroundColor: 'rgba(245, 158, 11, 0.3)',
+                                fill: true,
+                                tension: 0.4
+                            },
+                            {
+                                label: 'Other',
+                                data: data.other_rates || [],
+                                borderColor: '#9ca3af',
+                                backgroundColor: 'rgba(156, 163, 175, 0.3)',
+                                fill: true,
+                                tension: 0.4
+                            }
+                        ]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        plugins: {
+                            legend: { position: 'bottom', labels: { color: '#9ca3af' } },
+                            tooltip: { mode: 'index', intersect: false }
+                        },
                         scales: {
                             y: {
+                                stacked: true,
                                 beginAtZero: true,
                                 grid: { color: '#374151' },
-                                ticks: {
-                                    color: '#9ca3af',
-                                    callback: function (value) { return formatBytes(value); }
-                                }
+                                ticks: { color: '#9ca3af' },
+                                title: { display: true, text: 'Packets / sec', color: '#6b7280' }
                             },
-                            x: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#9ca3af' }
+                            }
                         }
                     }
                 });
             } catch (error) {
-                console.error('Error loading inbound/outbound chart:', error);
+                console.error('Error loading protocol trend chart:', error);
             }
         }
 
@@ -1369,8 +1654,12 @@
                 tbody.innerHTML = '';
                 data.forEach(item => {
                     tbody.innerHTML += `
-                        <tr class="border-b border-gray-700 hover:bg-gray-700">
-                            <td class="py-3 px-4"><strong>${item.ip}</strong></td>
+                        <tr class="border-b border-gray-700 hover:bg-gray-700 transition">
+                            <td class="py-3 px-4">
+                                <a href="#" onclick="viewIPDetails('${item.ip}')" class="text-blue-400 hover:text-blue-300 hover:underline font-mono">
+                                    ${item.ip}
+                                </a>
+                            </td>
                             <td class="py-3 px-4">${formatNumber(item.packet_count)}</td>
                             <td class="py-3 px-4"><strong>${item.percentage}%</strong></td>
                         </tr>
@@ -1396,8 +1685,12 @@
                 tbody.innerHTML = '';
                 data.forEach(item => {
                     tbody.innerHTML += `
-                        <tr class="border-b border-gray-700 hover:bg-gray-700">
-                            <td class="py-3 px-4"><strong>${item.ip}</strong></td>
+                        <tr class="border-b border-gray-700 hover:bg-gray-700 transition">
+                            <td class="py-3 px-4">
+                                <a href="#" onclick="viewIPDetails('${item.ip}')" class="text-blue-400 hover:text-blue-300 hover:underline font-mono">
+                                    ${item.ip}
+                                </a>
+                            </td>
                             <td class="py-3 px-4">${formatNumber(item.packet_count)}</td>
                             <td class="py-3 px-4"><strong>${item.percentage}%</strong></td>
                         </tr>
@@ -1567,9 +1860,7 @@
 
         async function loadTCPFlagsChart(features) {
             try {
-                // USE REAL DATA from /api/tcp-flags
-                const response = await fetch(`${API_BASE_URL}/api/tcp-flags`);
-                const tcpData = await response.json();
+                const tcpData = features;
 
                 destroyChart('tcpFlagsChart');
 
@@ -1612,9 +1903,7 @@
 
         async function loadDNSAnalysisChart(features) {
             try {
-                // USE REAL DATA from /api/dns-stats
-                const response = await fetch(`${API_BASE_URL}/api/dns-stats`);
-                const dnsData = await response.json();
+                const dnsData = features;
 
                 destroyChart('dnsAnalysisChart');
 
@@ -1704,7 +1993,7 @@
 
                             html += `
                                 <div class="bg-gray-700 rounded-lg p-4 border border-gray-600 border-l-4 border-l-blue-500">
-                                    <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">${key.replace(/_/g, ' ')}</div>
+                                    <div class="text-xs text-gray-400 font-semibold mb-1">${toTitleCase(key)}</div>
                                     <div class="text-xl font-bold text-white">${value}</div>
                                 </div>
                             `;
@@ -1767,7 +2056,9 @@
                 await loadMLProbabilitiesChart(mlData);
                 await loadPortHeatmap();
                 await loadConnectionFailureChart(features);
+
                 await loadDNSQueryLengthChart(features);
+                await loadThreatLog();
 
             } catch (error) {
                 console.error('Error loading security:', error);
@@ -1779,11 +2070,11 @@
                 destroyChart('mlProbabilitiesChart');
 
                 const probabilities = {
-                    'Normal': mlData.attack_type === 'Normal' ? mlData.confidence : 100 - mlData.confidence,
-                    'DDoS': mlData.attack_type === 'DDoS' ? mlData.confidence : Math.random() * 10,
-                    'Port Scan': mlData.attack_type === 'Port Scan' ? mlData.confidence : Math.random() * 10,
-                    'DNS Tunnel': mlData.attack_type === 'DNS Tunnel' ? mlData.confidence : Math.random() * 10,
-                    'Brute Force': mlData.attack_type === 'Brute Force' ? mlData.confidence : Math.random() * 10
+                    'Normal': mlData.attack_type === 'Normal' ? mlData.confidence : 0,
+                    'DDoS': mlData.attack_type === 'DDoS' ? mlData.confidence : 0,
+                    'Port Scan': mlData.attack_type === 'Port Scan' ? mlData.confidence : 0,
+                    'DNS Tunnel': mlData.attack_type === 'DNS Tunnel' ? mlData.confidence : 0,
+                    'Brute Force': mlData.attack_type === 'Brute Force' ? mlData.confidence : 0
                 };
 
                 const ctx = document.getElementById('mlProbabilitiesChart');
@@ -1820,31 +2111,72 @@
 
                 destroyChart('portHeatmapChart');
 
+                // Create a proper heatmap-style visualization using a bubble chart
+                // Each port gets a cell with color intensity based on packet count
+                const maxPackets = Math.max(...data.map(p => p.packet_count || 1));
+
+                // Generate heatmap-style data with intensity colors
+                const datasets = data.map((p, idx) => {
+                    const intensity = (p.packet_count || 0) / maxPackets;
+                    const r = Math.round(239 * intensity + 16 * (1 - intensity));  // Red for high, green for low
+                    const g = Math.round(68 * intensity + 185 * (1 - intensity));
+                    const b = Math.round(68 * intensity + 129 * (1 - intensity));
+
+                    return {
+                        label: `Port ${p.port}`,
+                        data: [{ x: 0, y: idx, v: p.packet_count }],
+                        backgroundColor: `rgba(${r}, ${g}, ${b}, 0.8)`,
+                        borderColor: `rgba(${r}, ${g}, ${b}, 1)`,
+                        borderWidth: 2,
+                        pointRadius: 20,
+                        pointStyle: 'rectRounded'
+                    };
+                });
+
                 const ctx = document.getElementById('portHeatmapChart');
                 chartInstances.portHeatmapChart = new Chart(ctx, {
-                    type: 'bar',
+                    type: 'bubble',
                     data: {
-                        labels: data.map(p => `${p.port} (${p.service})`),
                         datasets: [{
-                            label: 'Packets',
-                            data: data.map(p => p.packet_count),
+                            label: 'Port Activity',
+                            data: data.map((p, idx) => ({
+                                x: 0,
+                                y: idx,
+                                r: Math.min(40, Math.max(10, (p.packet_count / maxPackets) * 40))
+                            })),
                             backgroundColor: data.map(p => {
-                                if ([22, 3389, 23].includes(p.port)) return '#ef4444';
-                                if ([80, 443].includes(p.port)) return '#10b981';
-                                if (p.port === 53) return '#3b82f6';
-                                return '#8b5cf6';
+                                const intensity = (p.packet_count || 0) / maxPackets;
+                                // Red for critical ports, green for normal
+                                if ([22, 3389, 23].includes(p.port)) return `rgba(239, 68, 68, ${0.4 + intensity * 0.6})`;
+                                if ([80, 443].includes(p.port)) return `rgba(16, 185, 129, ${0.4 + intensity * 0.6})`;
+                                if (p.port === 53) return `rgba(59, 130, 246, ${0.4 + intensity * 0.6})`;
+                                return `rgba(139, 92, 246, ${0.4 + intensity * 0.6})`;
                             }),
-                            borderRadius: 8
+                            borderWidth: 0
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        indexAxis: 'y',
-                        plugins: { legend: { display: false } },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => {
+                                        const p = data[ctx.dataIndex];
+                                        return `Port ${p.port} (${p.service}): ${p.packet_count} packets`;
+                                    }
+                                }
+                            }
+                        },
                         scales: {
-                            x: { beginAtZero: true, grid: { color: '#374151' }, ticks: { color: '#9ca3af' } },
-                            y: { grid: { display: false }, ticks: { color: '#9ca3af' } }
+                            x: { display: false },
+                            y: {
+                                type: 'category',
+                                labels: data.map(p => `${p.port} (${p.service})`),
+                                grid: { display: false },
+                                ticks: { color: '#9ca3af', font: { size: 11 } }
+                            }
                         }
                     }
                 });
@@ -1933,6 +2265,45 @@
                 console.error('Error loading DNS query length chart:', error);
             }
         }
+
+        async function loadThreatLog() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/alerts?limit=50`);
+                const data = await response.json();
+                const tbody = document.getElementById('threat-log-body');
+
+                if (!data.alerts || data.alerts.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-2 text-center text-gray-500">No threats recorded in this session.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = ''; // Clear fallback message
+
+                data.alerts.forEach(alert => {
+                    const color = alert.severity === 'CRITICAL' ? 'text-red-500' :
+                        alert.severity === 'HIGH' ? 'text-orange-500' :
+                            alert.severity === 'MEDIUM' ? 'text-yellow-500' : 'text-blue-500';
+
+                    const row = `
+                        <tr class="border-b border-gray-700 hover:bg-gray-700">
+                            <td class="px-4 py-2 text-gray-400">${new Date(alert.detected_at).toLocaleTimeString()}</td>
+                            <td class="px-4 py-2 font-bold ${color}">${alert.attack_type}</td>
+                            <td class="px-4 py-2 text-gray-300 font-mono">${alert.src_ip}</td>
+                            <td class="px-4 py-2 text-gray-400">${alert.confidence.toFixed(1)}%</td>
+                            <td class="px-4 py-2">
+                                <span class="px-2 py-1 rounded text-xs font-semibold ${alert.resolved ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}">
+                                    ${alert.resolved ? 'RESOLVED' : 'ACTIVE'}
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                    tbody.innerHTML += row;
+                });
+            } catch (error) {
+                console.error('Error loading threat log:', error);
+            }
+        }
+
 
         // ==================== PERFORMANCE PAGE ====================
         async function loadPerformance() {
@@ -2122,15 +2493,38 @@
         }
 
         // ==================== PACKETS PAGE ====================
+        // ==================== PACKETS PAGE ====================
+        let searchTimeout;
+
+        function filterPacketsTable() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                currentPacketPage = 1; // Reset to first page
+                loadPackets(1);
+            }, 300); // 300ms debounce
+        }
+
         async function loadPackets(page) {
             try {
-                const response = await fetch(`${API_BASE_URL}/api/packets?page=${page}&limit=20`);
+                const protocol = document.getElementById('packetProtocolFilter') ? document.getElementById('packetProtocolFilter').value : 'All';
+                const search = document.getElementById('packetSearchInput') ? document.getElementById('packetSearchInput').value : '';
+
+                let url = `${API_BASE_URL}/api/packets?page=${page}&limit=20`;
+                if (protocol && protocol !== 'All') url += `&protocol=${protocol}`;
+                if (search) url += `&search=${encodeURIComponent(search)}`;
+
+                const response = await fetch(url);
                 const data = await response.json();
 
                 const tbody = document.querySelector('#packets-table tbody');
 
                 if (!data.packets || data.packets.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8">No packets captured yet</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-gray-400">No packets found matching criteria</td></tr>';
+
+                    // Update Paging info even if empty
+                    document.getElementById('page-info').textContent = `Page 1 of 1`;
+                    document.getElementById('prev-btn').disabled = true;
+                    document.getElementById('next-btn').disabled = true;
                     return;
                 }
 
@@ -2148,20 +2542,20 @@
                     tbody.innerHTML += `
                         <tr class="border-b border-gray-700 hover:bg-gray-700">
                             <td class="py-3 px-4">${pkt.timestamp}</td>
-                            <td class="py-3 px-4"><strong>${pkt.src_ip}</strong></td>
-                            <td class="py-3 px-4"><strong>${pkt.dst_ip}</strong></td>
+                            <td class="py-3 px-4 font-mono text-gray-300">${pkt.src_ip}</td>
+                            <td class="py-3 px-4 font-mono text-gray-300">${pkt.dst_ip}</td>
                             <td class="py-3 px-4">${protocolBadge}</td>
                             <td class="py-3 px-4">${pkt.src_port || '--'}</td>
                             <td class="py-3 px-4">${pkt.dst_port || pkt.port || '--'}</td>
                             <td class="py-3 px-4">${pkt.length}</td>
-                            <td class="py-3 px-4">${pkt.flags || '--'}</td>
+                            <td class="py-3 px-4 font-mono text-xs">${pkt.flags || '--'}</td>
                         </tr>
                     `;
                 });
 
-                const totalPages = Math.ceil(data.total / 20);
+                const totalPages = Math.ceil(data.total / 20) || 1;
                 document.getElementById('page-info').textContent = `Page ${page} of ${totalPages}`;
-                document.getElementById('prev-btn').disabled = page === 1;
+                document.getElementById('prev-btn').disabled = page <= 1;
                 document.getElementById('next-btn').disabled = page >= totalPages;
 
             } catch (error) {
@@ -2169,230 +2563,8 @@
             }
         }
 
-        // ==================== WEBSOCKET REAL-TIME UPDATES ====================
-        class DashboardWebSocket {
-            constructor() {
-                this.ws = null;
-                this.reconnectAttempts = 0;
-                this.maxReconnectAttempts = 10;
-                this.reconnectDelay = 1000;
-                this.isConnected = false;
-                this.pollingFallback = null;
-            }
-
-            connect() {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}/ws/dashboard`;
-
-                console.log('📡 Connecting to WebSocket:', wsUrl);
-                this.ws = new WebSocket(wsUrl);
-
-                this.ws.onopen = () => {
-                    console.log('✅ WebSocket connected');
-                    this.isConnected = true;
-                    this.reconnectAttempts = 0;
-                    this.updateConnectionStatus(true);
-
-                    // Stop polling fallback if running
-                    if (this.pollingFallback) {
-                        clearInterval(this.pollingFallback);
-                        this.pollingFallback = null;
-                        console.log('🔄 Stopped polling fallback');
-                    }
-                };
-
-                this.ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-                    this.handleMessage(data);
-                };
-
-                this.ws.onclose = (event) => {
-                    console.log('❌ WebSocket disconnected:', event.code, event.reason);
-                    this.isConnected = false;
-                    this.updateConnectionStatus(false);
-                    this.attemptReconnect();
-                };
-
-                this.ws.onerror = (error) => {
-                    console.error('WebSocket error:', error);
-                };
-            }
-
-            handleMessage(data) {
-                console.log('📨 WebSocket message:', data.type);
-
-                switch (data.type) {
-                    case 'initial':
-                        // Initial connection data
-                        console.log('📊 Initial stats:', data.stats);
-                        if (data.stats.total_packets) {
-                            document.getElementById('totalPackets').textContent =
-                                formatNumber(data.stats.total_packets);
-                        }
-                        break;
-
-                    case 'packet_update':
-                        // New packets ingested - refresh relevant charts
-                        console.log(`📦 ${data.raw_packets} packets ingested`);
-                        this.refreshDashboard();
-                        this.showToast(`📦 ${data.raw_packets} packets ingested`, 'info');
-                        break;
-
-                    case 'alert':
-                        // Security alert detected!
-                        console.log('🚨 ALERT:', data.attack_type);
-                        this.showAlertNotification(data);
-                        this.refreshSecurityPage();
-                        break;
-
-                    case 'stats_update':
-                        // Periodic stats refresh
-                        console.log('📈 Stats updated');
-                        break;
-                }
-
-                // Update "last updated" timestamp
-                document.getElementById('last-updated').textContent =
-                    `Last updated: ${new Date().toLocaleTimeString()}`;
-            }
-
-            showAlertNotification(alert) {
-                // Log to history
-                if (typeof recentAlerts !== 'undefined') {
-                    recentAlerts.unshift(alert);
-                    if (recentAlerts.length > 50) recentAlerts.pop();
-
-                    // Update Threat Log UI
-                    if (typeof updateThreatLog === 'function') {
-                        updateThreatLog(alert);
-                    }
-                }
-
-                // Create toast notification for security alert
-                const toast = document.createElement('div');
-                const severityColor = alert.severity === 'CRITICAL' ? 'red' :
-                    alert.severity === 'HIGH' ? 'orange' : 'yellow';
-
-                toast.className = `fixed top-20 right-4 p-4 rounded-lg shadow-lg z-50 bg-${severityColor}-600 border border-${severityColor}-500 animate-pulse`;
-                toast.style.animation = 'pulse 2s infinite';
-                toast.id = 'alert-toast-' + Date.now();
-
-                toast.innerHTML = `
-                    <div class="flex items-center space-x-3">
-                        <div class="text-2xl">🚨</div>
-                        <div>
-                            <h4 class="font-bold text-white">${alert.attack_type} Detected!</h4>
-                            <p class="text-sm text-gray-200">Source: ${alert.src_ip}</p>
-                            <p class="text-sm text-gray-200">Confidence: ${(alert.confidence * 100).toFixed(1)}%</p>
-                            <p class="text-xs text-gray-300">${alert.timestamp}</p>
-                        </div>
-                        <button onclick="this.parentElement.parentElement.remove()" class="text-white hover:text-gray-300 ml-2">✕</button>
-                    </div>
-                `;
-
-                document.body.appendChild(toast);
-
-                // Auto-remove after 15 seconds
-                setTimeout(() => {
-                    const el = document.getElementById(toast.id);
-                    if (el) el.remove();
-                }, 15000);
-
-                // Update security page if visible
-                const securityStatus = document.getElementById('security-status');
-                if (securityStatus) {
-                    securityStatus.textContent = `${alert.attack_type} DETECTED`;
-                    securityStatus.parentElement.parentElement.className =
-                        'bg-gradient-to-r from-red-900 to-red-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-red-700';
-                }
-            }
-
-            showToast(message, type = 'info') {
-                const colors = {
-                    info: 'bg-blue-600',
-                    success: 'bg-green-600',
-                    warning: 'bg-yellow-600',
-                    error: 'bg-red-600'
-                };
-
-                const toast = document.createElement('div');
-                toast.className = `fixed bottom-4 right-4 p-3 rounded-lg shadow-lg z-50 ${colors[type]} text-white text-sm`;
-                toast.textContent = message;
-                document.body.appendChild(toast);
-
-                setTimeout(() => toast.remove(), 3000);
-            }
-
-            refreshDashboard() {
-                const activePage = document.querySelector('.page.active').id;
-                if (activePage === 'dashboard-page') {
-                    // Refresh only essential data, not all charts
-                    loadDashboard();
-                }
-            }
-
-            refreshSecurityPage() {
-                const activePage = document.querySelector('.page.active').id;
-                if (activePage === 'security-page') {
-                    loadSecurity();
-                }
-            }
-
-            updateConnectionStatus(connected) {
-                const statusDot = document.querySelector('.animate-pulse');
-                if (statusDot) {
-                    if (connected) {
-                        statusDot.classList.remove('bg-red-500');
-                        statusDot.classList.add('bg-green-500');
-                    } else {
-                        statusDot.classList.remove('bg-green-500');
-                        statusDot.classList.add('bg-red-500');
-                    }
-                }
-            }
-
-            attemptReconnect() {
-                if (this.reconnectAttempts < this.maxReconnectAttempts) {
-                    this.reconnectAttempts++;
-                    const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
-                    console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-                    setTimeout(() => this.connect(), delay);
-                } else {
-                    console.error('❌ Max reconnection attempts reached. Falling back to HTTP polling.');
-                    this.startPollingFallback();
-                }
-            }
-
-            startPollingFallback() {
-                if (this.pollingFallback) return;
-
-                console.log('⚠️ Starting HTTP polling fallback');
-                this.showToast('WebSocket unavailable. Using polling mode.', 'warning');
-
-                this.pollingFallback = setInterval(() => {
-                    const activePage = document.querySelector('.page.active').id;
-                    if (activePage === 'dashboard-page') {
-                        initializeDashboard();
-                    } else if (activePage === 'analytics-page') {
-                        loadAnalytics();
-                    } else if (activePage === 'security-page') {
-                        loadSecurity();
-                    } else if (activePage === 'performance-page') {
-                        loadPerformance();
-                    }
-                }, 5000);
-            }
-
-            send(message) {
-                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(typeof message === 'string' ? message : JSON.stringify(message));
-                }
-            }
-
-            ping() {
-                this.send('ping');
-            }
-        }
+        // NOTE: DashboardWebSocket class is defined earlier in the file (around line 891)
+        // Removed duplicate definition that was here to fix SyntaxError
 
         // Helper function for number formatting
         function formatNumber(num) {
@@ -2404,42 +2576,8 @@
         // ==================== ENHANCEMENTS ====================
 
         // ==================== ENHANCEMENTS ====================
-        let isLiveMode = false;
-        let liveModeInterval = null;
+        // ==================== LEGACY CODE REMOVED ====================
 
-        function toggleLiveMode() {
-            isLiveMode = !isLiveMode;
-            const toggleBtn = document.getElementById('liveModeToggle');
-            const knob = document.getElementById('liveModeKnob');
-
-            if (isLiveMode) {
-                toggleBtn.classList.remove('bg-gray-700');
-                toggleBtn.classList.add('bg-green-600');
-                knob.classList.add('translate-x-4');
-                startLiveRefresh();
-            } else {
-                toggleBtn.classList.add('bg-gray-700');
-                toggleBtn.classList.remove('bg-green-600');
-                knob.classList.remove('translate-x-4');
-                stopLiveRefresh();
-            }
-        }
-
-        function startLiveRefresh() {
-            if (liveModeInterval) clearInterval(liveModeInterval);
-            liveModeInterval = setInterval(() => {
-                const activePage = document.querySelector('.page.active').id;
-                if (activePage === 'dashboard-page') initializeDashboard();
-                else if (activePage === 'analytics-page') loadAnalytics();
-                else if (activePage === 'security-page') loadSecurity();
-                else if (activePage === 'performance-page') loadPerformance();
-            }, 5000);
-        }
-
-        function stopLiveRefresh() {
-            if (liveModeInterval) clearInterval(liveModeInterval);
-            liveModeInterval = null;
-        }
 
         async function exportDashboardData() {
             try {
@@ -2567,6 +2705,126 @@
             }
         }
 
+        // Helper to download files
+        function downloadFile(content, fileName, mimeType) {
+            const a = document.createElement('a');
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            a.setAttribute('href', url);
+            a.setAttribute('download', fileName);
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        async function generateAnalyticsReport() {
+            await exportExecutiveSummary();
+        }
+
+        async function generateSecurityReport() {
+            try {
+                const [mlRes, featRes, srcRes, portRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/api/ml/predict`),
+                    fetch(`${API_BASE_URL}/api/features`),
+                    fetch(`${API_BASE_URL}/api/top-sources?limit=10`),
+                    fetch(`${API_BASE_URL}/api/top-ports?limit=10`)
+                ]);
+
+                const mlData = await mlRes.json();
+                const features = await featRes.json();
+                const topSrc = await srcRes.json();
+                const topPorts = await portRes.json();
+
+                if (features.error) { alert(`Error: ${features.error}`); return; }
+
+                const start = features.window_start || new Date().toISOString();
+                const end = features.window_end || new Date().toISOString();
+
+                let csv = `# Generated By: NetGuardian Pro\n`;
+                csv += `# Report Type: Security Assessment Report\n`;
+                csv += `# Generated At: ${new Date().toLocaleString()}\n`;
+                csv += `# Data Interval: ${start} - ${end}\n`;
+
+                csv += `\n[SECTION] 1. THREAT DETECTION STATUS\n`;
+                csv += "Metric,Value\n";
+                csv += `Current Threat Level,${mlData.threat_level || 'UNKNOWN'}\n`;
+                csv += `Detected Attack Type,${mlData.attack_type || 'None'}\n`;
+                csv += `ML Confidence,${(mlData.confidence || 0).toFixed(1)}%\n`;
+                csv += `DNS Health Score,${calculateDNSHealth(features).toFixed(1)}/100\n`;
+
+                csv += `\n[SECTION] 2. ANOMALY INDICATORS\n`;
+                csv += "Indicator,Value,Threshold\n";
+                csv += `Connection Failure Rate,${((features.connection_failure_rate || 0) * 100).toFixed(1)}%,>20% is suspicious\n`;
+                csv += `Port Scan Score,${(features.port_scan_score || 0).toFixed(1)},>0.6 is suspicious\n`;
+                csv += `ARP Spoofing Risk,${features.arp_reply_without_request_count > 0 ? 'DETECTED' : 'None'},>0 packets\n`;
+                csv += `DNS Tunneling Risk,${(100 - calculateDNSHealth(features)).toFixed(1)}%,>50% is suspicious\n`;
+
+                csv += `\n[SECTION] 3. SUSPICIOUS TRAFFIC SOURCES (Top Talkers)\n`;
+                csv += "Rank,IP Address,Packets,Percentage\n";
+                topSrc.forEach((item, i) => {
+                    csv += `${i + 1},${item.ip},${item.packet_count},${item.percentage}%\n`;
+                });
+
+                csv += `\n[SECTION] 4. TOP TARGETED SERVICES (Ports)\n`;
+                csv += "Rank,Port,Service,Packets,Percentage\n";
+                topPorts.forEach((item, i) => {
+                    csv += `${i + 1},${item.port},${item.service},${item.packet_count},${item.percentage}%\n`;
+                });
+
+                downloadFile(csv, `security_report_${Date.now()}.csv`, 'text/csv');
+            } catch (error) {
+                alert('Security Export failed: ' + error.message);
+                console.error(error);
+            }
+        }
+
+        async function generatePerformanceReport() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/features-extended`);
+                const features = await response.json();
+
+                if (features.error) {
+                    // Fallback to basic features if extended fails
+                    const basicRes = await fetch(`${API_BASE_URL}/api/features`);
+                    const basicFeat = await basicRes.json();
+                    if (basicFeat.error) { alert('Export failed: No data available'); return; }
+                    Object.assign(features, basicFeat);
+                }
+
+                const start = features.window_start || new Date().toISOString();
+                const end = features.window_end || new Date().toISOString();
+
+                let csv = `# Generated By: NetGuardian Pro\n`;
+                csv += `# Report Type: Network Performance Report\n`;
+                csv += `# Generated At: ${new Date().toLocaleString()}\n`;
+                csv += `# Data Interval: ${start} - ${end}\n`;
+
+                csv += `\n[SECTION] 1. BANDWIDTH & THROUGHPUT\n`;
+                csv += "Metric,Value,Unit\n";
+                csv += `Bandwidth Utilization,${calculateBandwidthUtilization(features)}%,Percentage\n`;
+                csv += `Byte Rate,${formatBytes(features.byte_rate_bps || 0)}/s,Rate\n`;
+                csv += `Packet Rate,${(features.packet_rate_pps || 0).toFixed(1)},Packets/sec\n`;
+                csv += `Avg Packet Size,${(features.avg_packet_size || 0).toFixed(0)},Bytes\n`;
+
+                csv += `\n[SECTION] 2. CONNECTION QUALITY\n`;
+                csv += "Metric,Value,Status\n";
+                csv += `SYN-ACK Ratio,${(features.syn_ack_ratio || 0).toFixed(2)},${features.syn_ack_ratio > 0.8 ? 'Healthy' : 'Degraded'}\n`;
+                csv += `Inter-Arrival Time,${((features.inter_arrival_time_mean || 0) * 1000).toFixed(2)} ms,Latency Proxy\n`;
+                csv += `Connection Failure Rate,${((features.connection_failure_rate || 0) * 100).toFixed(1)}%,${features.connection_failure_rate < 0.2 ? 'Good' : 'High Failures'}\n`;
+
+                csv += `\n[SECTION] 3. TRAFFIC COMPOSITION\n`;
+                csv += "Metric,Count\n";
+                csv += `Unique Destinations,${features.unique_dst_ips || 0}\n`;
+                csv += `Unique Ports Hit,${features.unique_dst_ports || 0}\n`;
+                csv += `TCP Packets,${features.tcp_count || 0}\n`;
+                csv += `UDP Packets,${features.udp_count || 0}\n`;
+
+                downloadFile(csv, `performance_report_${Date.now()}.csv`, 'text/csv');
+            } catch (error) {
+                alert('Performance Export failed: ' + error.message);
+                console.error(error);
+            }
+        }
+
         async function checkDBStatus() {
             try {
                 const response = await fetch(`${API_BASE_URL}/health`);
@@ -2599,6 +2857,57 @@
         // Check DB Status every 30s
         checkDBStatus();
         setInterval(checkDBStatus, 30000);
+
+
+        // ==================== PACKETS PAGE ====================
+        async function loadPackets(page = 1) {
+            if (page < 1) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/packets?page=${page}&limit=50`);
+                const data = await response.json();
+
+                if (!data.packets) {
+                    console.error('No packets data received');
+                    return;
+                }
+
+                currentPacketPage = page;
+
+                // Update pagination info
+                document.getElementById('page-info').textContent = `Page ${page} of ${data.total_pages}`;
+                document.getElementById('prev-btn').disabled = page <= 1;
+                document.getElementById('next-btn').disabled = page >= data.total_pages;
+
+                // Render packets table
+                const tbody = document.querySelector('#packets-page table tbody');
+                if (!tbody) return;
+
+                if (data.packets.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-gray-500">No packets found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.packets.map(p => {
+                    const timestamp = new Date(p.timestamp * 1000).toLocaleString();
+                    return `
+                        <tr class="border-b border-gray-700 hover:bg-gray-750 transition-colors">
+                            <td class="py-3 px-4 text-gray-400 text-xs">${timestamp}</td>
+                            <td class="py-3 px-4 font-mono text-blue-300">${p.src_ip || '-'}</td>
+                            <td class="py-3 px-4 font-mono text-green-300">${p.dst_ip || '-'}</td>
+                            <td class="py-3 px-4">${p.protocol || '-'}</td>
+                            <td class="py-3 px-4">${p.src_port || '-'}</td>
+                            <td class="py-3 px-4">${p.dst_port || '-'}</td>
+                            <td class="py-3 px-4">${p.length || 0}</td>
+                            <td class="py-3 px-4 text-xs text-gray-400">${p.tcp_flags || '-'}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                console.error('Error loading packets:', error);
+            }
+        }
 
         // ========== REPORT GENERATORS & SPECIAL EXPORTS ==========
         let recentAlerts = [];
@@ -2800,13 +3109,50 @@
             if (tbody.children.length > 50) tbody.removeChild(tbody.lastChild);
         }
 
+        // 7. Update Security Alert Header
+        function updateSecurityAlert(alert) {
+            const alertDiv = document.getElementById('security-alert');
+            const statusEl = document.getElementById('security-status');
+            const messageEl = document.getElementById('security-message');
+            const iconDiv = alertDiv.querySelector('.alert-icon');
 
-        // ==================== INITIALIZE ====================
+            if (!alert || alert.attack_type === 'Normal' || alert.attack_type === 'normal') {
+                // All clear
+                alertDiv.className = 'bg-gradient-to-r from-green-900 to-green-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-green-700';
+                iconDiv.className = 'alert-icon bg-green-500 p-3 rounded-lg';
+                iconDiv.innerHTML = '<i data-feather="check-circle" class="w-8 h-8"></i>';
+                statusEl.textContent = 'All Clear';
+                messageEl.textContent = 'No threats detected. Network operating normally.';
+            } else {
+                // Attack detected
+                const severity = alert.severity || 'HIGH';
+                const confidence = ((alert.confidence || 0) * 100).toFixed(0);
+
+                if (severity === 'CRITICAL') {
+                    alertDiv.className = 'bg-gradient-to-r from-red-900 to-red-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-red-700 animate-pulse';
+                    iconDiv.className = 'alert-icon bg-red-500 p-3 rounded-lg';
+                } else if (severity === 'HIGH') {
+                    alertDiv.className = 'bg-gradient-to-r from-orange-900 to-orange-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-orange-700';
+                    iconDiv.className = 'alert-icon bg-orange-500 p-3 rounded-lg';
+                } else {
+                    alertDiv.className = 'bg-gradient-to-r from-yellow-900 to-yellow-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-yellow-700';
+                    iconDiv.className = 'alert-icon bg-yellow-500 p-3 rounded-lg';
+                }
+
+                iconDiv.innerHTML = '<i data-feather="alert-triangle" class="w-8 h-8"></i>';
+                statusEl.textContent = `⚠️ ${alert.attack_type} Detected!`;
+                messageEl.textContent = `Source: ${alert.src_ip || 'Unknown'} | Confidence: ${confidence}% | Severity: ${severity}`;
+            }
+
+            // Refresh feather icons
+            feather.replace();
+        }
+
         async function initializeDashboard() {
             await loadDashboard();
             await loadProtocolChart();
             await loadTrafficVolumeChart();
-            await loadInboundOutboundChart();
+            await loadProtocolTrendChart();
             await loadPacketSizeChart();
             await loadTopSources();
             await loadTopDestinations();
@@ -2815,7 +3161,54 @@
 
         // Initialize dashboard data first
         initializeDashboard();
+
+        // DB Status check function
+        async function checkDBStatus() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                const data = await response.json();
+                const indicator = document.getElementById('db-status-indicator');
+                const text = document.getElementById('db-status-text');
+
+                if (data.database_connected) {
+                    indicator.className = 'w-2 h-2 bg-green-500 rounded-full animate-pulse';
+                    text.textContent = 'DB Connected';
+                    text.className = 'text-xs text-green-400';
+                } else {
+                    indicator.className = 'w-2 h-2 bg-red-500 rounded-full';
+                    text.textContent = 'DB Offline';
+                    text.className = 'text-xs text-red-400';
+                }
+            } catch (error) {
+                const indicator = document.getElementById('db-status-indicator');
+                const text = document.getElementById('db-status-text');
+                indicator.className = 'w-2 h-2 bg-red-500 rounded-full';
+                text.textContent = 'DB Offline';
+                text.className = 'text-xs text-red-400';
+            }
+        }
+
+        // Check DB status initially and every 30 seconds
         checkDBStatus();
+        setInterval(checkDBStatus, 30000);
+
+        // Auto-refresh dashboard data every 10 seconds
+        setInterval(() => {
+            const activePage = document.querySelector('.page.active')?.id;
+            if (activePage === 'dashboard-page') {
+                loadDashboard();
+                updateTimestamp();
+            } else if (activePage === 'analytics-page') {
+                loadAnalytics();
+            } else if (activePage === 'security-page') {
+                loadSecurity();
+            } else if (activePage === 'performance-page') {
+                loadPerformance();
+            } else if (activePage === 'packets-page') {
+                // Refresh current page of packets
+                loadPackets(currentPacketPage || 1);
+            }
+        }, 5000);
 
         // Initialize WebSocket connection for real-time updates
         const dashboardWS = new DashboardWebSocket();
@@ -2828,7 +3221,7 @@
             }
         }, 30000);
 
-        console.log('✅ NetGuardian Pro initialized with WebSocket real-time updates');
+        console.log('✅ NetGuardian Pro initialized with auto-refresh (10s interval)');
         console.log('📡 API URL:', API_BASE_URL);
     </script>
 </body>

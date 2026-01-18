@@ -21,10 +21,22 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, 
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.dialects.postgresql import JSON
 from datetime import datetime, timedelta, timezone
+# Try different import paths for telegram_bot
 try:
-    from app.telegram_bot import send_security_alert
+    # When running as server.app.main from root
+    from server.app.telegram_bot import send_security_alert
 except ImportError:
-    from telegram_bot import send_security_alert
+    try:
+        # When running from server directory
+        from app.telegram_bot import send_security_alert
+    except ImportError:
+        try:
+            # When running from app directory or with direct path
+            from telegram_bot import send_security_alert
+        except ImportError:
+            # Define dummy function if module missing
+            def send_security_alert(*args, **kwargs):
+                print("⚠️ Telegram bot module not found - alerts disabled")
 
 # Global Timezone Setting (UTC+3)
 LOCAL_TZ = timezone(timedelta(hours=3))
@@ -33,6 +45,7 @@ import numpy as np
 import joblib
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import json
 import tempfile
@@ -81,6 +94,9 @@ CONFIDENCE_MEDIUM = 0.7
 
 # Shutdown flag for graceful exit
 shutdown_flag = False
+
+# Server start time - only process data created after this
+SERVER_START_TIME = datetime.now(LOCAL_TZ)
 
 # ========== DATABASE SETUP ==========
 DATABASE_AVAILABLE = False
@@ -232,6 +248,11 @@ class AggregatedFeature(Base):
     predicted_label = Column(String(50))
     confidence = Column(Float)
     created_at = Column(DateTime, default=lambda: datetime.now(LOCAL_TZ), index=True)
+    
+    # Composite index for efficient cascading aggregation queries
+    __table_args__ = (
+        Index('idx_agg_window_src_start', 'window_size', 'src_ip', 'window_start'),
+    )
 
 
 class DetectedAlert(Base):
@@ -385,6 +406,64 @@ class ConnectionManager:
 
 # Initialize WebSocket manager
 ws_manager = ConnectionManager()
+
+
+# ========== WEBSOCKET ENDPOINT ==========
+@app.websocket("/ws/dashboard")
+async def websocket_dashboard(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time dashboard updates.
+    Keeps connection open and sends updates when data changes.
+    """
+    await ws_manager.connect(websocket)
+    
+    try:
+        # Send initial stats on connect
+        if DATABASE_AVAILABLE:
+            db = SessionLocal()
+            try:
+                total_packets = db.query(RawPacket).count()
+                total_alerts = db.query(DetectedAlert).count()
+                await websocket.send_json({
+                    "type": "initial",
+                    "stats": {
+                        "total_packets": total_packets,
+                        "total_alerts": total_alerts,
+                        "database_connected": True
+                    }
+                })
+            finally:
+                db.close()
+        else:
+            await websocket.send_json({
+                "type": "initial",
+                "stats": {
+                    "total_packets": 0,
+                    "total_alerts": 0,
+                    "database_connected": False
+                }
+            })
+        
+        # Keep connection alive and handle incoming messages
+        while True:
+            try:
+                # Wait for messages (ping/pong or commands)
+                data = await websocket.receive_text()
+                
+                # Handle ping messages
+                if data == "ping" or (data.startswith("{") and "ping" in data):
+                    await websocket.send_json({"type": "pong"})
+                    
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                logger.warning(f"WebSocket error: {e}")
+                break
+                
+    except Exception as e:
+        logger.error(f"WebSocket connection error: {e}")
+    finally:
+        ws_manager.disconnect(websocket)
 
 
 # ========== HELPER FUNCTIONS ==========
@@ -790,9 +869,10 @@ def run_predictions():
         try:
             db = SessionLocal()
             
-            # Find aggregated features without predictions
+            # Find aggregated features without predictions (only since server start)
             unpredicted = db.query(AggregatedFeature).filter(
-                AggregatedFeature.predicted_label == None
+                AggregatedFeature.predicted_label == None,
+                AggregatedFeature.created_at >= SERVER_START_TIME
             ).limit(100).all()
             
             if unpredicted:
@@ -858,7 +938,11 @@ async def _process_packets(packets_list: list, db) -> dict:
         agg_rows_count = 0
         if AGGREGATOR_AVAILABLE and tmp_path:
             try:
-                agg_df = aggregator.process_file(tmp_path)
+                # 2. Run aggregation (Synchronous for 5s only)
+                # We only generate 5s windows here. 30s and 180s are handled by background cascading.
+                agg_df = aggregator.process_file(tmp_path, window_sizes=[5])
+                
+                # 3. Store aggregated features in DB
                 agg_rows = []
                 
                 for _, row in agg_df.iterrows():
@@ -1019,6 +1103,7 @@ def health_check():
     return {
         "status": "healthy" if DATABASE_AVAILABLE else "limited",
         "database_available": DATABASE_AVAILABLE,
+        "database_connected": DATABASE_AVAILABLE,  # For frontend compatibility
         "model_loaded": MODEL_LOADED,
         "aggregator_available": AGGREGATOR_AVAILABLE,
         "websocket_clients": ws_manager.get_connection_count(),
@@ -1027,6 +1112,61 @@ def health_check():
 
 
 # ========== WEBSOCKET ENDPOINT ==========
+
+@app.get("/api/packets")
+def get_packets(page: int = 1, limit: int = 50, protocol: str = None, src_ip: str = None):
+    """
+    Get raw packets with pagination.
+    
+    Args:
+        page: Page number (1-indexed)
+        limit: Number of packets per page (max 100)
+        protocol: Filter by protocol (TCP, UDP, ICMP, etc.)
+        src_ip: Filter by source IP
+    """
+    if not DATABASE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Database not available")
+    
+    limit = min(limit, 100)  # Cap at 100
+    offset = (page - 1) * limit
+    
+    db = SessionLocal()
+    try:
+        query = db.query(RawPacket).order_by(RawPacket.id.desc())
+        
+        if protocol:
+            query = query.filter(RawPacket.protocol == protocol.upper())
+        if src_ip:
+            query = query.filter(RawPacket.src_ip == src_ip)
+        
+        total = query.count()
+        packets = query.offset(offset).limit(limit).all()
+        
+        result = []
+        for p in packets:
+            result.append({
+                "id": p.id,
+                "timestamp": p.timestamp,
+                "src_ip": p.src_ip,
+                "dst_ip": p.dst_ip,
+                "protocol": p.protocol,
+                "src_port": p.src_port,
+                "dst_port": p.dst_port,
+                "length": p.length,
+                "tcp_flags": p.tcp_flags
+            })
+        
+        return {
+            "packets": result,
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "total_pages": (total + limit - 1) // limit
+        }
+    finally:
+        db.close()
+
+
 @app.websocket("/ws/dashboard")
 async def websocket_dashboard(websocket: WebSocket):
     """
@@ -1140,13 +1280,17 @@ def serve_dashboard():
 @app.get("/api/features")
 @fallback_to_dummy(get_dummy_features)
 def api_features(window_size: int = 5):
-    """Get aggregated features from aggregated_features table"""
+    """Get aggregated features from last 30 minutes or 100k packets"""
     db = SessionLocal()
     try:
-        # Get from aggregated_features
+        # Calculate 30 minutes ago
+        thirty_min_ago = datetime.now(LOCAL_TZ) - timedelta(minutes=30)
+        
+        # Get aggregated features from last 30 minutes
         result = db.query(AggregatedFeature).filter(
-            AggregatedFeature.window_size == window_size
-        ).order_by(desc(AggregatedFeature.id)).limit(10).all()
+            AggregatedFeature.window_size == window_size,
+            AggregatedFeature.created_at >= thirty_min_ago
+        ).order_by(desc(AggregatedFeature.id)).limit(100).all()
         
         if result:
             records = []
@@ -1174,13 +1318,18 @@ def api_features(window_size: int = 5):
                         features[k] = sum(values) / len(values) if values else 0
                 
                 features['record_count'] = len(records)
+                features['window_minutes'] = 30
+                
+                # explicit peak calculation
+                features['peak_byte_rate'] = max(r.get('byte_rate_bps', 0) for r in records)
             
             # Add derived metrics
-            syn_only = features['tcp_syn_count'] - features['tcp_ack_count']
-            features['connection_failure_rate'] = min(1, syn_only / max(1, features['tcp_syn_count'])) if syn_only > 0 else 0
+            syn_only = features.get('tcp_syn_count', 0) - features.get('tcp_ack_count', 0)
+            features['connection_failure_rate'] = min(1, syn_only / max(1, features.get('tcp_syn_count', 1))) if syn_only > 0 else 0
             
             return features
         
+        # Fallback to raw packets if no aggregated features
         return _compute_features_from_raw_packets(db)
     finally:
         db.close()
@@ -1221,11 +1370,27 @@ def api_features_by_ip(target_ip: str, window_size: int = 5):
 
 
 def _compute_features_from_raw_packets(db):
-    """Fallback: compute features from raw packets"""
-    result = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(1000).all()
+    """Compute features from raw packets (last 30 minutes or 100k packets, whichever is smaller)"""
+    # Calculate timestamp for 30 minutes ago
+    thirty_min_ago = time.time() - (30 * 60)  # 30 minutes in seconds
+    
+    # Query: last 100k packets OR packets from last 30 minutes
+    result = db.query(RawPacket).filter(
+        RawPacket.timestamp >= thirty_min_ago
+    ).order_by(desc(RawPacket.id)).limit(100000).all()
     
     if not result:
-        return {"error": "No data available"}
+        # Return zeroed-out structure to prevent dashboard crash on empty DB
+        return {
+            'packet_count': 0, 'byte_count': 0,
+            'packet_rate_pps': 0, 'byte_rate_bps': 0,
+            'tcp_count': 0, 'udp_count': 0, 'icmp_count': 0, 'arp_count': 0,
+            'unique_dst_ips': 0, 'unique_dst_ports': 0,
+            'tcp_syn_count': 0, 'tcp_ack_count': 0,
+            'dns_query_count': 0,
+            'source': 'empty_db_fallback',
+            'window_minutes': 30
+        }
     
     packets = []
     for p in result:
@@ -1241,7 +1406,7 @@ def _compute_features_from_raw_packets(db):
         })
     
     # Calculate basic metrics
-    duration = 5
+    duration = 30 * 60  # Default to 30 minutes
     if len(packets) >= 2:
         timestamps = [p['timestamp'] for p in packets if p['timestamp']]
         if timestamps:
@@ -1255,6 +1420,7 @@ def _compute_features_from_raw_packets(db):
         'byte_count': total_bytes,
         'packet_rate_pps': total_packets / duration,
         'byte_rate_bps': (total_bytes * 8) / duration,
+        'peak_byte_rate': (total_bytes * 8) / duration,  # Fallback: same as avg
         'tcp_count': sum(1 for p in packets if p['protocol'] == 'TCP'),
         'udp_count': sum(1 for p in packets if p['protocol'] == 'UDP'),
         'icmp_count': sum(1 for p in packets if p['protocol'] and 'ICMP' in str(p['protocol'])),
@@ -1264,7 +1430,8 @@ def _compute_features_from_raw_packets(db):
         'tcp_syn_count': sum(1 for p in packets if p['tcp_syn']),
         'tcp_ack_count': sum(1 for p in packets if p['tcp_ack']),
         'dns_query_count': sum(1 for p in packets if p['dns_query']),
-        'source': 'raw_packets_fallback'
+        'source': 'raw_packets_30min',
+        'window_minutes': 30
     }
 
 
@@ -1458,6 +1625,399 @@ def api_top_ports(limit: int = 5):
         db.close()
 
 
+# ========== CASCADING AGGREGATION ==========
+
+def aggregate_windows(db_session, source_window_size: int, target_window_size: int, record_count: int):
+    """
+     aggregations from source_window_size to target_window_size.
+    e.g. 5s -> 30s (needs 6 records), 5s -> 180s (needs 36 records)
+    """
+    # 1. Find the last processed target window to know where to start
+    last_target = db_session.query(AggregatedFeature).filter(
+        AggregatedFeature.window_size == target_window_size
+    ).order_by(desc(AggregatedFeature.window_end)).first()
+    
+    start_time = last_target.window_end if last_target else datetime.now(LOCAL_TZ) - timedelta(hours=24)
+    if not last_target:
+        # If no target windows yet, start from the first available source window
+        first_source = db_session.query(AggregatedFeature).filter(
+            AggregatedFeature.window_size == source_window_size
+        ).order_by(AggregatedFeature.window_start).first()
+        if first_source:
+             start_time = first_source.window_start
+        else:
+             return # No source data
+
+    # 2. Get all source records after the last target end
+    source_records = db_session.query(AggregatedFeature).filter(
+        AggregatedFeature.window_size == source_window_size,
+        AggregatedFeature.window_start >= start_time
+    ).order_by(AggregatedFeature.window_start).all()
+
+    if not source_records:
+        return
+
+    # 3. Group by Time Bucket AND src_ip
+    # We want to align to target_window_size boundaries
+    grouped = {} # { (src_ip, aligned_start_time): [records] }
+
+    for rec in source_records:
+        # Align timestamp to bucket
+        # Simple alignment: bucket_start
+        # We assume consecutive records. 
+        # Better approach: Group strictly by time ranges of length target_window_size
+        
+        # Calculate bucket based on timestamp integer division
+        ts = rec.window_start.timestamp()
+        bucket_ts = (int(ts) // target_window_size) * target_window_size
+        bucket_start = datetime.fromtimestamp(bucket_ts, tz=LOCAL_TZ)
+        
+        key = (rec.src_ip, bucket_start)
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(rec)
+
+    # 4. Aggregate and Insert
+    new_records = []
+    
+    for (src_ip, bucket_start), records in grouped.items():
+        # Only process complete buckets? 
+        # source_window_size * count = target_window_size . 
+        # e.g. 5s * 6 = 30s. We need approx coverage.
+        # Let's require at least 50% coverage to create a record, or strictly all? 
+        # User said "make it aggregates... like the 5 second batch". 
+        # Robustness: Proceed if we have at least 1 record, summing what we have.
+        
+        bucket_end = bucket_start + timedelta(seconds=target_window_size)
+        
+        # Filter records that generally fall in this bucket (double check)
+        # (Already done by bucketing logic essentially)
+        
+        # Calculate aggregated values
+        agg_rec = AggregatedFeature(
+            window_start=bucket_start,
+            window_end=bucket_end,
+            window_size=target_window_size,
+            src_ip=src_ip,
+            created_at=datetime.now(LOCAL_TZ)
+        )
+        
+        # Counters -> SUM
+        agg_rec.packet_count = sum(r.packet_count for r in records)
+        agg_rec.byte_count = sum(r.byte_count for r in records)
+        agg_rec.tcp_count = sum(r.tcp_count for r in records)
+        agg_rec.udp_count = sum(r.udp_count for r in records)
+        agg_rec.icmp_count = sum(r.icmp_count for r in records)
+        agg_rec.arp_count = sum(r.arp_count for r in records)
+        
+        agg_rec.tcp_syn_count = sum(r.tcp_syn_count for r in records)
+        agg_rec.tcp_ack_count = sum(r.tcp_ack_count for r in records)
+        agg_rec.half_open_count = sum(r.half_open_count for r in records)
+        agg_rec.sequential_port_count = sum(r.sequential_port_count for r in records)
+        
+        agg_rec.ssh_connection_attempts = sum(r.ssh_connection_attempts for r in records)
+        agg_rec.ftp_connection_attempts = sum(r.ftp_connection_attempts for r in records)
+        agg_rec.http_login_attempts = sum(r.http_login_attempts for r in records)
+        agg_rec.failed_login_count = sum(r.failed_login_count for r in records)
+        
+        agg_rec.arp_request_count = sum(r.arp_request_count for r in records)
+        agg_rec.arp_reply_count = sum(r.arp_reply_count for r in records)
+        agg_rec.gratuitous_arp_count = sum(r.gratuitous_arp_count for r in records)
+        agg_rec.arp_binding_flap_count = sum(r.arp_binding_flap_count for r in records)
+        agg_rec.arp_reply_without_request_count = sum(r.arp_reply_without_request_count for r in records)
+        
+        agg_rec.dns_query_count = sum(r.dns_query_count for r in records)
+        agg_rec.txt_record_count = sum(r.txt_record_count for r in records)
+        agg_rec.udp_port_53_count = sum(r.udp_port_53_count for r in records)
+        
+        agg_rec.open_conn_count = sum(r.open_conn_count for r in records)
+        agg_rec.partial_http_count = sum(r.partial_http_count for r in records)
+
+        agg_rec.tcp_ports_hit = sum(r.tcp_ports_hit for r in records)
+        agg_rec.udp_ports_hit = sum(r.udp_ports_hit for r in records)
+        agg_rec.remote_conn_port_hits = sum(r.remote_conn_port_hits for r in records)
+
+        # Uniques -> MAX (Approximation)
+        agg_rec.unique_dst_ips = max(r.unique_dst_ips for r in records)
+        agg_rec.unique_dst_ports = max(r.unique_dst_ports for r in records)
+        agg_rec.distinct_targets_count = max(r.distinct_targets_count for r in records)
+        agg_rec.distinct_record_types = max(r.distinct_record_types for r in records)
+        agg_rec.udp_dest_port_count = max(r.udp_dest_port_count for r in records)
+        agg_rec.unique_qnames_count = max(r.unique_qnames_count for r in records)
+        
+        # Max MAC features
+        agg_rec.unique_macs_per_ip_max = max(r.unique_macs_per_ip_max for r in records)
+        agg_rec.suspicious_mac_changes = max(r.suspicious_mac_changes for r in records)
+        agg_rec.duplicate_mac_ips = max(r.duplicate_mac_ips for r in records)
+
+
+        # Averages -> Weighted Avg (or simple avg if simpler)
+        # Using simple Average for simplicity and speed as requested
+        count = len(records)
+        if count > 0:
+             agg_rec.avg_packet_size = sum(r.avg_packet_size for r in records) / count
+             agg_rec.packet_size_variance = sum(r.packet_size_variance for r in records) / count
+             
+             agg_rec.avg_subdomain_entropy = sum(r.avg_subdomain_entropy for r in records) / count
+             agg_rec.pct_high_entropy_queries = sum(r.pct_high_entropy_queries for r in records) / count
+             agg_rec.avg_answer_size = sum(r.avg_answer_size for r in records) / count
+             agg_rec.avg_query_interval_ms = sum(r.avg_query_interval_ms for r in records) / count
+             agg_rec.avg_subdomain_length = sum(r.avg_subdomain_length for r in records) / count
+             agg_rec.avg_label_count = sum(r.avg_label_count for r in records) / count
+             
+             agg_rec.avg_conn_duration = sum(r.avg_conn_duration for r in records) / count
+             agg_rec.bytes_per_conn = sum(r.bytes_per_conn for r in records) / count
+             agg_rec.request_completion_ratio = sum(r.request_completion_ratio for r in records) / count
+             
+             agg_rec.syn_to_synack_ratio = sum(r.syn_to_synack_ratio for r in records) / count
+             agg_rec.syn_only_ratio = sum(r.syn_only_ratio for r in records) / count
+             
+             agg_rec.avg_macs_per_ip = sum(r.avg_macs_per_ip for r in records) / count
+             agg_rec.mac_ip_ratio = sum(r.mac_ip_ratio for r in records) / count
+
+        # Rates -> Re-calculate based on totals and target window size
+        duration = target_window_size
+        agg_rec.packet_rate_pps = agg_rec.packet_count / duration
+        agg_rec.byte_rate_bps = agg_rec.byte_count * 8 / duration
+        agg_rec.syn_rate_pps = agg_rec.tcp_syn_count / duration
+        agg_rec.syn_ack_rate_pps = agg_rec.tcp_ack_count / duration # Approx
+        agg_rec.scan_rate_pps = agg_rec.packet_count / duration # Filtered scan rate? reusing generic packet rate
+        agg_rec.icmp_rate_pps = agg_rec.icmp_count / duration
+        agg_rec.udp_rate_pps = agg_rec.udp_count / duration
+        agg_rec.query_rate_qps = agg_rec.dns_query_count / duration
+        agg_rec.login_request_rate = agg_rec.http_login_attempts / duration
+        agg_rec.auth_attempts_per_min = (agg_rec.ssh_connection_attempts + agg_rec.ftp_connection_attempts + agg_rec.http_login_attempts) / (duration/60)
+
+        # Ratios
+        agg_rec.dns_to_udp_ratio = agg_rec.dns_query_count / max(1, agg_rec.udp_count)
+
+        new_records.append(agg_rec)
+
+    if new_records:
+        db_session.add_all(new_records)
+        db_session.commit()
+        logger.info(f"⚡ Cascaded Aggregation: Created {len(new_records)} records of {target_window_size}s from {source_window_size}s data")
+
+
+def run_cascading_aggregation():
+    """Background task to run aggregation periodically, parallelized by src_ip."""
+    MAX_WORKERS = 4  # Number of parallel threads for aggregation
+    
+    while not shutdown_flag:
+        if DATABASE_AVAILABLE:
+            try:
+                # 1. Get unique src_ips with pending 5s data (in main thread)
+                db_main = SessionLocal()
+                pending_ips = db_main.query(AggregatedFeature.src_ip).filter(
+                    AggregatedFeature.window_size == 5
+                ).distinct().all()
+                pending_ips = [ip[0] for ip in pending_ips]
+                db_main.close()
+                
+                if not pending_ips:
+                    time.sleep(10)
+                    continue
+                
+                logger.info(f"🔄 Cascading aggregation: Processing {len(pending_ips)} unique IPs")
+                
+                # 2. Parallelize aggregation per src_ip
+                def aggregate_for_ip(src_ip):
+                    """Process 30s and 180s aggregation for a single src_ip."""
+                    db = SessionLocal()  # New session per thread
+                    try:
+                        # 5s -> 30s for this IP
+                        aggregate_windows_for_ip(db, src_ip, source_window_size=5, target_window_size=30)
+                        # 5s -> 180s for this IP
+                        aggregate_windows_for_ip(db, src_ip, source_window_size=5, target_window_size=180)
+                        db.commit()
+                    except Exception as e:
+                        logger.error(f"Aggregation failed for IP {src_ip}: {e}")
+                        db.rollback()
+                    finally:
+                        db.close()
+                
+                with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                    futures = {executor.submit(aggregate_for_ip, ip): ip for ip in pending_ips}
+                    for future in as_completed(futures):
+                        ip = futures[future]
+                        try:
+                            future.result()  # Raise any exception from thread
+                        except Exception as e:
+                            logger.error(f"Thread error for IP {ip}: {e}")
+                
+                logger.info(f"✅ Cascading aggregation complete for {len(pending_ips)} IPs")
+                
+            except Exception as e:
+                logger.error(f"Cascading aggregation main loop failed: {e}")
+        
+        time.sleep(10)  # Run frequently to keep up
+
+
+def aggregate_windows_for_ip(db_session, src_ip: str, source_window_size: int, target_window_size: int):
+    """
+    Aggregate windows for a SINGLE src_ip from source_window_size to target_window_size.
+    """
+    # Find the last processed target window for this IP
+    last_target = db_session.query(AggregatedFeature).filter(
+        AggregatedFeature.window_size == target_window_size,
+        AggregatedFeature.src_ip == src_ip
+    ).order_by(desc(AggregatedFeature.window_end)).first()
+    
+    start_time = last_target.window_end if last_target else datetime.now(LOCAL_TZ) - timedelta(hours=24)
+    if not last_target:
+        first_source = db_session.query(AggregatedFeature).filter(
+            AggregatedFeature.window_size == source_window_size,
+            AggregatedFeature.src_ip == src_ip
+        ).order_by(AggregatedFeature.window_start).first()
+        if first_source:
+            start_time = first_source.window_start
+        else:
+            return  # No source data for this IP
+
+    # Get source records for this IP
+    source_records = db_session.query(AggregatedFeature).filter(
+        AggregatedFeature.window_size == source_window_size,
+        AggregatedFeature.src_ip == src_ip,
+        AggregatedFeature.window_start >= start_time
+    ).order_by(AggregatedFeature.window_start).all()
+
+    if not source_records:
+        return
+
+    # Group by Time Bucket
+    grouped = {}
+    for rec in source_records:
+        ts = rec.window_start.timestamp()
+        bucket_ts = (int(ts) // target_window_size) * target_window_size
+        bucket_start = datetime.fromtimestamp(bucket_ts, tz=LOCAL_TZ)
+        
+        if bucket_start not in grouped:
+            grouped[bucket_start] = []
+        grouped[bucket_start].append(rec)
+
+    # Determine required count for complete window
+    # 30s needs 6x 5s records, 180s needs 36x 5s records (or 6x 30s)
+    required_count = target_window_size // source_window_size
+
+    # Aggregate and Insert (only complete buckets)
+    new_records = []
+    for bucket_start, records in grouped.items():
+        # Skip incomplete buckets
+        if len(records) < required_count:
+            continue  # Not enough source records yet
+        
+        bucket_end = bucket_start + timedelta(seconds=target_window_size)
+        
+        # Check for duplicate: skip if this bucket already exists
+        existing = db_session.query(AggregatedFeature.id).filter(
+            AggregatedFeature.window_size == target_window_size,
+            AggregatedFeature.src_ip == src_ip,
+            AggregatedFeature.window_start == bucket_start
+        ).first()
+        if existing:
+            continue  # Already aggregated, skip
+        
+        agg_rec = AggregatedFeature(
+            window_start=bucket_start,
+            window_end=bucket_end,
+            window_size=target_window_size,
+            src_ip=src_ip,
+            created_at=datetime.now(LOCAL_TZ)
+        )
+        
+        # Counters -> SUM
+        agg_rec.packet_count = sum(r.packet_count for r in records)
+        agg_rec.byte_count = sum(r.byte_count for r in records)
+        agg_rec.tcp_count = sum(r.tcp_count for r in records)
+        agg_rec.udp_count = sum(r.udp_count for r in records)
+        agg_rec.icmp_count = sum(r.icmp_count for r in records)
+        agg_rec.arp_count = sum(r.arp_count for r in records)
+        agg_rec.tcp_syn_count = sum(r.tcp_syn_count for r in records)
+        agg_rec.tcp_ack_count = sum(r.tcp_ack_count for r in records)
+        agg_rec.half_open_count = sum(r.half_open_count for r in records)
+        agg_rec.sequential_port_count = sum(r.sequential_port_count for r in records)
+        agg_rec.ssh_connection_attempts = sum(r.ssh_connection_attempts for r in records)
+        agg_rec.ftp_connection_attempts = sum(r.ftp_connection_attempts for r in records)
+        agg_rec.http_login_attempts = sum(r.http_login_attempts for r in records)
+        agg_rec.failed_login_count = sum(r.failed_login_count for r in records)
+        agg_rec.arp_request_count = sum(r.arp_request_count for r in records)
+        agg_rec.arp_reply_count = sum(r.arp_reply_count for r in records)
+        agg_rec.gratuitous_arp_count = sum(r.gratuitous_arp_count for r in records)
+        agg_rec.arp_binding_flap_count = sum(r.arp_binding_flap_count for r in records)
+        agg_rec.arp_reply_without_request_count = sum(r.arp_reply_without_request_count for r in records)
+        agg_rec.dns_query_count = sum(r.dns_query_count for r in records)
+        agg_rec.txt_record_count = sum(r.txt_record_count for r in records)
+        agg_rec.udp_port_53_count = sum(r.udp_port_53_count for r in records)
+        agg_rec.open_conn_count = sum(r.open_conn_count for r in records)
+        agg_rec.partial_http_count = sum(r.partial_http_count for r in records)
+        agg_rec.tcp_ports_hit = sum(r.tcp_ports_hit for r in records)
+        agg_rec.udp_ports_hit = sum(r.udp_ports_hit for r in records)
+        agg_rec.remote_conn_port_hits = sum(r.remote_conn_port_hits for r in records)
+
+        # Uniques -> MAX
+        agg_rec.unique_dst_ips = max(r.unique_dst_ips for r in records)
+        agg_rec.unique_dst_ports = max(r.unique_dst_ports for r in records)
+        agg_rec.distinct_targets_count = max(r.distinct_targets_count for r in records)
+        agg_rec.distinct_record_types = max(r.distinct_record_types for r in records)
+        agg_rec.udp_dest_port_count = max(r.udp_dest_port_count for r in records)
+        agg_rec.unique_qnames_count = max(r.unique_qnames_count for r in records)
+        agg_rec.unique_macs_per_ip_max = max(r.unique_macs_per_ip_max for r in records)
+        agg_rec.suspicious_mac_changes = max(r.suspicious_mac_changes for r in records)
+        agg_rec.duplicate_mac_ips = max(r.duplicate_mac_ips for r in records)
+
+        # Averages -> Simple Avg
+        count = len(records)
+        if count > 0:
+            agg_rec.avg_packet_size = sum(r.avg_packet_size for r in records) / count
+            agg_rec.packet_size_variance = sum(r.packet_size_variance for r in records) / count
+            agg_rec.avg_subdomain_entropy = sum(r.avg_subdomain_entropy for r in records) / count
+            agg_rec.pct_high_entropy_queries = sum(r.pct_high_entropy_queries for r in records) / count
+            agg_rec.avg_answer_size = sum(r.avg_answer_size for r in records) / count
+            agg_rec.avg_query_interval_ms = sum(r.avg_query_interval_ms for r in records) / count
+            agg_rec.avg_subdomain_length = sum(r.avg_subdomain_length for r in records) / count
+            agg_rec.avg_label_count = sum(r.avg_label_count for r in records) / count
+            agg_rec.avg_conn_duration = sum(r.avg_conn_duration for r in records) / count
+            agg_rec.bytes_per_conn = sum(r.bytes_per_conn for r in records) / count
+            agg_rec.request_completion_ratio = sum(r.request_completion_ratio for r in records) / count
+            agg_rec.syn_to_synack_ratio = sum(r.syn_to_synack_ratio for r in records) / count
+            agg_rec.syn_only_ratio = sum(r.syn_only_ratio for r in records) / count
+            agg_rec.avg_macs_per_ip = sum(r.avg_macs_per_ip for r in records) / count
+            agg_rec.mac_ip_ratio = sum(r.mac_ip_ratio for r in records) / count
+
+        # Rates -> Re-calculate
+        duration = target_window_size
+        agg_rec.packet_rate_pps = agg_rec.packet_count / duration
+        agg_rec.byte_rate_bps = agg_rec.byte_count * 8 / duration
+        agg_rec.syn_rate_pps = agg_rec.tcp_syn_count / duration
+        agg_rec.syn_ack_rate_pps = agg_rec.tcp_ack_count / duration
+        agg_rec.scan_rate_pps = agg_rec.packet_count / duration
+        agg_rec.icmp_rate_pps = agg_rec.icmp_count / duration
+        agg_rec.udp_rate_pps = agg_rec.udp_count / duration
+        agg_rec.query_rate_qps = agg_rec.dns_query_count / duration
+        agg_rec.login_request_rate = agg_rec.http_login_attempts / duration
+        agg_rec.auth_attempts_per_min = (agg_rec.ssh_connection_attempts + agg_rec.ftp_connection_attempts + agg_rec.http_login_attempts) / (duration/60)
+        agg_rec.dns_to_udp_ratio = agg_rec.dns_query_count / max(1, agg_rec.udp_count)
+
+        new_records.append(agg_rec)
+
+    if new_records:
+        db_session.add_all(new_records)
+        db_session.flush()  # Flush to get IDs before prediction
+        
+        # Immediately run ML prediction on each new aggregated record
+        for agg_rec in new_records:
+            try:
+                predict_and_alert(db_session, agg_rec)
+            except Exception as e:
+                logger.error(f"Inline ML prediction failed for {agg_rec.src_ip} ({target_window_size}s): {e}")
+        
+        logger.info(f"⚡ Created {len(new_records)} {target_window_size}s records for IP {src_ip} (ML predicted)")
+        # Commit is done by caller
+
+# ... existing code ...
+
+
+
 
 @app.get("/api/packets")
 def api_packets(limit: int = 200):
@@ -1498,11 +2058,13 @@ def api_packets(limit: int = 200):
 
 @app.get("/api/traffic-history")
 @fallback_to_dummy(get_dummy_traffic_history)
-def api_traffic_history(hours: int = 24):
+def api_traffic_history(hours: float = 24.0):
     """Get real traffic volume over time with auto-fallback"""
     db = SessionLocal()
     try:
         cutoff = datetime.now(LOCAL_TZ) - timedelta(hours=hours)
+        use_minute_resolution = hours <= 1.0
+        time_format = '%H:%M' if use_minute_resolution else '%H:00'
         
         # Try aggregated_features first
         result = db.query(AggregatedFeature).filter(
@@ -1510,22 +2072,46 @@ def api_traffic_history(hours: int = 24):
         ).order_by(AggregatedFeature.created_at).all()
         
         if result:
-            # Group by hour
-            hourly_data = {}
+            # Group by hour or minute
+            grouped_data = {}
             for r in result:
-                hour_key = r.created_at.strftime('%H:00') if r.created_at else '00:00'
-                if hour_key not in hourly_data:
-                    hourly_data[hour_key] = {'byte_rate': 0, 'packet_rate': 0, 'count': 0}
-                hourly_data[hour_key]['byte_rate'] += r.byte_rate_bps or 0
-                hourly_data[hour_key]['packet_rate'] += r.packet_rate_pps or 0
-                hourly_data[hour_key]['count'] += 1
+                key = r.created_at.strftime(time_format) if r.created_at else '00:00'
+                if key not in grouped_data:
+                    grouped_data[key] = {
+                        'byte_rate': 0, 'packet_rate': 0, 'count': 0,
+                        'tcp': 0, 'udp': 0, 'icmp': 0, 'other': 0
+                    }
+                grouped_data[key]['byte_rate'] += r.byte_rate_bps or 0
+                grouped_data[key]['packet_rate'] += r.packet_rate_pps or 0
+                
+                # Approximate PPS for protocols (count / 10s window)
+                grouped_data[key]['tcp'] += (r.tcp_count or 0) / 10.0
+                grouped_data[key]['udp'] += (r.udp_count or 0) / 10.0
+                grouped_data[key]['icmp'] += (r.icmp_count or 0) / 10.0
+                grouped_data[key]['other'] += (r.other_count or 0) / 10.0
+                
+                grouped_data[key]['count'] += 1
             
-            # Average per hour
-            labels = sorted(hourly_data.keys())
-            byte_rates = [hourly_data[h]['byte_rate'] / max(1, hourly_data[h]['count']) for h in labels]
-            packet_rates = [hourly_data[h]['packet_rate'] / max(1, hourly_data[h]['count']) for h in labels]
+            # Average per bucket
+            labels = sorted(grouped_data.keys())
+            byte_rates = [grouped_data[k]['byte_rate'] / max(1, grouped_data[k]['count']) for k in labels]
+            packet_rates = [grouped_data[k]['packet_rate'] / max(1, grouped_data[k]['count']) for k in labels]
             
-            return {"labels": labels, "byte_rates": byte_rates, "packet_rates": packet_rates}
+            # Protocol rates (already converted to rate sum, so just avg by count)
+            tcp_rates = [grouped_data[k]['tcp'] / max(1, grouped_data[k]['count']) for k in labels]
+            udp_rates = [grouped_data[k]['udp'] / max(1, grouped_data[k]['count']) for k in labels]
+            icmp_rates = [grouped_data[k]['icmp'] / max(1, grouped_data[k]['count']) for k in labels]
+            other_rates = [grouped_data[k]['other'] / max(1, grouped_data[k]['count']) for k in labels]
+            
+            return {
+                "labels": labels, 
+                "byte_rates": byte_rates, 
+                "packet_rates": packet_rates,
+                "tcp_rates": tcp_rates,
+                "udp_rates": udp_rates,
+                "icmp_rates": icmp_rates,
+                "other_rates": other_rates
+            }
         
         # Fallback: query raw_packets
         raw_result = db.query(RawPacket).filter(
@@ -1533,21 +2119,46 @@ def api_traffic_history(hours: int = 24):
         ).order_by(RawPacket.timestamp).all()
         
         if not raw_result:
-            return {"labels": [], "byte_rates": [], "packet_rates": []}
+            return {
+                "labels": [], "byte_rates": [], "packet_rates": [],
+                "tcp_rates": [], "udp_rates": [], "icmp_rates": [], "other_rates": []
+            }
         
-        hourly_data = {}
+        grouped_data = {}
         for p in raw_result:
-            hour_key = datetime.fromtimestamp(p.timestamp).strftime('%H:00') if p.timestamp else '00:00'
-            if hour_key not in hourly_data:
-                hourly_data[hour_key] = {'bytes': 0, 'packets': 0}
-            hourly_data[hour_key]['bytes'] += p.length or 0
-            hourly_data[hour_key]['packets'] += 1
+            ts = datetime.fromtimestamp(p.timestamp)
+            key = ts.strftime(time_format)
+            if key not in grouped_data:
+                grouped_data[key] = {'bytes': 0, 'packets': 0, 'tcp': 0, 'udp': 0, 'icmp': 0, 'other': 0}
+            grouped_data[key]['bytes'] += p.length or 0
+            grouped_data[key]['packets'] += 1
+            
+            proto = p.protocol
+            if proto == 'TCP': grouped_data[key]['tcp'] += 1
+            elif proto == 'UDP': grouped_data[key]['udp'] += 1
+            elif proto == 'ICMP': grouped_data[key]['icmp'] += 1
+            else: grouped_data[key]['other'] += 1
         
-        labels = sorted(hourly_data.keys())
-        byte_rates = [hourly_data[h]['bytes'] * 8 / 3600 for h in labels]  # bits per second avg
-        packet_rates = [hourly_data[h]['packets'] / 3600 for h in labels]  # packets per second avg
+        labels = sorted(grouped_data.keys())
+        # Calc rates
+        duration_sec = 60 if use_minute_resolution else 3600
+        byte_rates = [grouped_data[k]['bytes'] * 8 / duration_sec for k in labels]
+        packet_rates = [grouped_data[k]['packets'] / duration_sec for k in labels]
         
-        return {"labels": labels, "byte_rates": byte_rates, "packet_rates": packet_rates}
+        tcp_rates = [grouped_data[k]['tcp'] / duration_sec for k in labels]
+        udp_rates = [grouped_data[k]['udp'] / duration_sec for k in labels]
+        icmp_rates = [grouped_data[k]['icmp'] / duration_sec for k in labels]
+        other_rates = [grouped_data[k]['other'] / duration_sec for k in labels]
+        
+        return {
+            "labels": labels, 
+            "byte_rates": byte_rates, 
+            "packet_rates": packet_rates,
+            "tcp_rates": tcp_rates,
+            "udp_rates": udp_rates,
+            "icmp_rates": icmp_rates,
+            "other_rates": other_rates
+        }
 
     finally:
         db.close()
@@ -1717,6 +2328,15 @@ def api_features_extended(window_size: int = 5):
         raw_packets = db.query(RawPacket).order_by(desc(RawPacket.id)).limit(2000).all()
         
         if not raw_packets:
+            # Populate defaults for extended metrics if no packets
+            defaults = {
+                'syn_ack_ratio': 0, 'port_scan_score': 0,
+                'inter_arrival_time_mean': 0, 'inter_arrival_time_std': 0,
+                'min_packet_size': 0, 'max_packet_size': 0, 'packet_size_variance': 0,
+                'tcp_fin_count': 0, 'tcp_rst_count': 0, 'tcp_psh_count': 0,
+                'dns_response_count': 0, 'dns_unique_domains': 0, 'avg_dns_query_length': 0
+            }
+            base_features.update(defaults)
             return base_features
         
         # SYN-ACK ratio
@@ -1730,7 +2350,6 @@ def api_features_extended(window_size: int = 5):
         # High ports-per-IP ratio suggests scanning
         ports_per_ip = unique_ports / max(1, unique_ips)
         base_features['port_scan_score'] = min(1.0, ports_per_ip / 100)  # Normalize to 0-1
-        
         # Inter-arrival time (average time between consecutive packets)
         timestamps = sorted([p.timestamp for p in raw_packets if p.timestamp])
         if len(timestamps) >= 2:
@@ -1768,17 +2387,36 @@ def api_features_extended(window_size: int = 5):
 
 
 @app.get("/api/packets")
-def api_packets(page: int = 1, limit: int = 20):
-    """Get paginated raw packets"""
+@app.get("/api/packets")
+def api_packets(page: int = 1, limit: int = 20, protocol: str = None, search: str = None):
+    """Get paginated raw packets with optional filters"""
     if not DATABASE_AVAILABLE:
         return get_dummy_packets()
     
     db = SessionLocal()
     try:
-        total = db.query(func.count(RawPacket.id)).scalar()
+        query = db.query(RawPacket)
+
+        # Apply Protocol Filter
+        if protocol and protocol != "All":
+            query = query.filter(RawPacket.protocol == protocol)
+
+        # Apply Search Filter (Source IP, Dest IP, or Payload match)
+        if search:
+            search_term = f"%{search}%"
+            query = query.filter(
+                or_(
+                    RawPacket.src_ip.like(search_term),
+                    RawPacket.dst_ip.like(search_term),
+                    RawPacket.protocol.like(search_term)
+                )
+            )
+
+        # Get total count after filtering
+        total = query.count()
         
         offset = (page - 1) * limit
-        result = db.query(RawPacket).order_by(desc(RawPacket.id)).offset(offset).limit(limit).all()
+        result = query.order_by(desc(RawPacket.id)).offset(offset).limit(limit).all()
         
         packets = []
         for p in result:
@@ -2004,6 +2642,10 @@ def startup_event():
         prediction_thread = threading.Thread(target=run_predictions, daemon=True)
         prediction_thread.start()
         logger.info("🔄 Started background prediction loop")
+
+        agg_thread = threading.Thread(target=run_cascading_aggregation, daemon=True)
+        agg_thread.start()
+        logger.info("🔄 Started background cascading aggregation loop")
     elif not DATABASE_AVAILABLE:
         logger.warning("⚠️ Database not available - predictions disabled")
     else:

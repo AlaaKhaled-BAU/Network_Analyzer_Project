@@ -38,23 +38,27 @@ python sender.py                 # Upload only (separate terminal)
 ┌─────────────┐                ┌─────────────┐                ┌─────────────┐
 │ sniffer.py  │ → JSON (5s) → │ sender.py   │ → HTTP POST → │ Server API  │
 │ (Process 1) │   + .ready    │ (Process 2) │   (JSON)      │  (FastAPI)  │
-└─────────────┘  OR --send    └─────────────┘                └─────────────┘
-                                                                     ↓
-                                                              raw_packets DB
-                                                                     ↓
-                                                             ┌───────────────┐
-                                                             │ Aggregator    │
-                                                             │ (Multi-window)│
-                                                             └───────────────┘
-                                                            /       |        \
-                                                        5s         30s       3min
-                                                         ↓          ↓         ↓
-                                                   predictions_5s  _30s  _3min
-                                                                     ↓
-                                                             ┌───────────────┐
-                                                             │ ML Predictor  │
-                                                             │ (XGBoost)     │
-                                                             └───────────────┘
+└─────────────┘  OR --send    └─────────────┘                └──────┬──────┘
+                                                                    │
+                                                           ┌────────┴────────┐
+                                                           │ Ingestion Logic │
+                                                           │ → 5s Aggregation│
+                                                           └────────┬────────┘
+                                                                    │
+                                                          ┌─────────┴─────────┐
+                                                          │ PostgreSQL        │
+                                                          │ raw + 5s features │
+                                                          └─────────┬─────────┘
+                                                                    │
+                                             ┌──────────────────────┴──────────────────────┐
+                                             │ Background Thread (every 10s)               │
+                                             │ ┌─────────────┐    ┌─────────────┐          │
+                                             │ │ 6× 5s → 30s │ →  │ ML Predict  │ → Alert  │
+                                             │ └─────────────┘    └─────────────┘          │
+                                             │ ┌─────────────┐    ┌─────────────┐          │
+                                             │ │36× 5s → 180s│ →  │ ML Predict  │ → Alert  │
+                                             │ └─────────────┘    └─────────────┘          │
+                                             └─────────────────────────────────────────────┘
 ```
 
 ### File Flow
@@ -74,7 +78,9 @@ client/logs/
 
 - **Real-Time Detection**: 5-second upload intervals for fast attack detection
 - **Multi-Window Analysis**: Three time windows (5s, 30s, 3min) for comprehensive threat detection
-- **Optimized Aggregation**: Cascading windows (30s and 3min built from 5s data)
+- **Cascading Aggregation**: 5s windows on ingest; 30s/180s built from DB (requires 6/36 records)
+- **Inline ML Prediction**: `predict_and_alert()` runs immediately after each 30s/180s aggregation
+- **Parallelized Processing**: ThreadPoolExecutor processes multiple IPs concurrently
 - **Dual Storage**: Raw packets for forensics + aggregated flows for ML
 - **Retry & Resilience**: Automatic retries with disk fallback during outages
 - **Zero Race Conditions**: Atomic file writes with `.ready` markers
@@ -160,7 +166,7 @@ DATABASE_URL = "postgresql://USER:PASSWORD@HOST:PORT/DATABASE"
 | `/api/alerts` | GET | Security alerts with filters |
 | `/api/last10` | GET | Last 10 flows (JSON) |
 | `/api/alltraffic` | GET | All flows (JSON) |
-| `/health` | GET | Health check |
+
 | `/dashboard` | GET | Web dashboard |
 
 **Database Tables:**
@@ -183,7 +189,7 @@ This ensures sender **never** sees incomplete files.
 
 ## 🛠️ Troubleshooting
 
-**Connection errors**: Check server is running with `curl http://SERVER:8000/health`
+**Connection errors**: Check server is running and access `http://SERVER:8000/docs`
 
 **Failed uploads**: Check `client/logs/failed_uploads/` and run `python sender.py`
 

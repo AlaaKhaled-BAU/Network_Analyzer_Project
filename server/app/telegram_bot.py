@@ -56,12 +56,27 @@ received_messages = []
 # --- Load existing chat IDs ---
 def load_chat_ids():
     global registered_users
+    registered_users = set()
+    
+    # 1. Load from JSON (Dynamic)
     if os.path.exists(CHAT_IDS_FILE):
         try:
             with open(CHAT_IDS_FILE, "r") as f:
-                registered_users = set(json.load(f))
+                file_ids = json.load(f)
+                registered_users.update(file_ids)
         except Exception as e:
-            logger.error(f"Failed to load chat IDs: {e}")
+            logger.error(f"Failed to load chat IDs from file: {e}")
+            
+    # 2. Load from Environment (Static)
+    env_ids = os.getenv("TELEGRAM_CHAT_IDS", "")
+    if env_ids:
+        try:
+            # Handle comma separated string "123,456"
+            ids = [int(x.strip()) for x in env_ids.split(",") if x.strip()]
+            registered_users.update(ids)
+            logger.info(f"Loaded {len(ids)} chat IDs from environment")
+        except ValueError:
+            logger.error("Invalid format in TELEGRAM_CHAT_IDS env var")
 
 load_chat_ids()
 

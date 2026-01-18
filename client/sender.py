@@ -13,6 +13,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import List, Dict
 
+from dotenv import load_dotenv
+
 # --- Configure Logging ---
 logging.basicConfig(
     level=logging.INFO,
@@ -32,8 +34,14 @@ PENDING_DIR.mkdir(parents=True, exist_ok=True)
 FAILED_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
+# Load environment variables from project root .env
+PROJECT_ROOT = SCRIPT_DIR.parent
+load_dotenv(PROJECT_ROOT / '.env')
+
 # Server configuration - use /ingest for direct JSON body
-SERVER_URL = "http://26.178.118.134:8000/ingest"
+# Default to local if not set
+DEFAULT_SERVER_URL = "http://localhost:8000/ingest"
+SERVER_URL = os.getenv("SERVER_URL", DEFAULT_SERVER_URL)
 POLL_INTERVAL = 1  # Check for new files every 1 second
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds

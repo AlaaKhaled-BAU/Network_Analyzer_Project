@@ -20,7 +20,7 @@ function calculateTCPFlagCounts(packets) {
 function calculatePacketSizeStats(packets) {
     const lengths = packets.map(p => p.length).filter(l => l > 0);
     if (lengths.length === 0) return { min_packet_size: 0, max_packet_size: 0, avg_packet_size: 0 };
-    
+
     return {
         min_packet_size: Math.min(...lengths),
         max_packet_size: Math.max(...lengths),
@@ -32,18 +32,18 @@ function calculatePacketSizeStats(packets) {
 function calculateConnectionFailureRate(packets) {
     const tcpPackets = packets.filter(p => p.protocol === 'TCP');
     if (tcpPackets.length === 0) return 0;
-    
+
     // Count SYN packets (connection attempts)
     const synCount = tcpPackets.filter(p => p.tcp_syn && !p.tcp_ack).length;
-    
+
     // Count SYN-ACK packets (successful handshakes)
     const synAckCount = tcpPackets.filter(p => p.tcp_syn && p.tcp_ack).length;
-    
+
     // Count RST packets (connection failures/resets)
     const rstCount = tcpPackets.filter(p => p.tcp_rst).length;
-    
+
     if (synCount === 0) return 0;
-    
+
     const failedConnections = Math.max(0, synCount - synAckCount) + rstCount;
     return Math.min(1, failedConnections / synCount);
 }
@@ -52,19 +52,19 @@ function calculateConnectionFailureRate(packets) {
 function calculateDNSMetrics(packets) {
     const queryCount = packets.filter(p => p.dns_query === true).length;
     const responseCount = packets.filter(p => p.dns_response === true).length;
-    
+
     // Unique domains from dns_qname field
     const domains = packets
         .filter(p => p.dns_qname)
         .map(p => p.dns_qname);
     const uniqueDomains = new Set(domains).size;
-    
+
     // Average query length (domain name length)
     const queryLengths = domains.map(d => d.length);
-    const avgQueryLength = queryLengths.length > 0 
-        ? queryLengths.reduce((a, b) => a + b, 0) / queryLengths.length 
+    const avgQueryLength = queryLengths.length > 0
+        ? queryLengths.reduce((a, b) => a + b, 0) / queryLengths.length
         : 0;
-    
+
     return {
         dns_query_count: queryCount,
         dns_response_count: responseCount,
@@ -76,34 +76,34 @@ function calculateDNSMetrics(packets) {
 // ==================== SYN-ACK RATIO ====================
 function calculateSynAckRatio(packets) {
     const tcpPackets = packets.filter(p => p.protocol === 'TCP');
-    
+
     const synCount = tcpPackets.filter(p => p.tcp_syn && !p.tcp_ack).length;
     const synAckCount = tcpPackets.filter(p => p.tcp_syn && p.tcp_ack).length;
-    
+
     // Healthy ratio should be close to 1
     if (synAckCount === 0) return synCount > 0 ? synCount : 0;
-    
+
     return synAckCount / Math.max(1, synCount);
 }
 
 // ==================== INTER-ARRIVAL TIME ====================
 function calculateInterArrivalTime(packets) {
     if (packets.length < 2) return { inter_arrival_time_mean: 0, inter_arrival_time_std: 0 };
-    
+
     // Sort by timestamp
     const sorted = [...packets].sort((a, b) => a.timestamp - b.timestamp);
-    
+
     // Calculate intervals between consecutive packets
     const intervals = [];
     for (let i = 1; i < sorted.length; i++) {
-        intervals.push(sorted[i].timestamp - sorted[i-1].timestamp);
+        intervals.push(sorted[i].timestamp - sorted[i - 1].timestamp);
     }
-    
+
     if (intervals.length === 0) return { inter_arrival_time_mean: 0, inter_arrival_time_std: 0 };
-    
+
     const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
     const variance = intervals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / intervals.length;
-    
+
     return {
         inter_arrival_time_mean: mean,
         inter_arrival_time_std: Math.sqrt(variance)
@@ -125,7 +125,7 @@ function calculateProtocolCounts(packets) {
 function calculateTrafficRates(packets, durationSeconds = 5) {
     const totalPackets = packets.length;
     const totalBytes = packets.reduce((sum, p) => sum + (p.length || 0), 0);
-    
+
     return {
         packet_count: totalPackets,
         byte_count: totalBytes,
@@ -138,7 +138,7 @@ function calculateTrafficRates(packets, durationSeconds = 5) {
 function calculateUniqueDestinations(packets) {
     const uniqueIPs = new Set(packets.filter(p => p.dst_ip).map(p => p.dst_ip));
     const uniquePorts = new Set(packets.filter(p => p.dst_port).map(p => p.dst_port));
-    
+
     return {
         unique_dst_ips: uniqueIPs.size,
         unique_dst_ports: uniquePorts.size
@@ -148,7 +148,7 @@ function calculateUniqueDestinations(packets) {
 // ==================== ARP METRICS ====================
 function calculateARPMetrics(packets, durationSeconds = 5) {
     const arpPackets = packets.filter(p => p.protocol === 'ARP');
-    
+
     return {
         arp_request_count: arpPackets.filter(p => p.arp_op === 1).length,
         arp_reply_count: arpPackets.filter(p => p.arp_op === 2).length,
@@ -211,14 +211,15 @@ function calculateProtocolDiversity(features) {
 }
 
 function calculateTrafficEfficiency(features) {
-    const payloadRatio = (features.avg_packet_size || 0) / 1500;
-    const ackOverhead = features.tcp_ack_count / Math.max(1, features.packet_count);
-    const protocolEfficiency = 1 - ackOverhead;
-    const retransWaste = (features.tcp_rst_count + features.tcp_fin_count) / Math.max(1, features.packet_count);
-    const retransEfficiency = 1 - retransWaste;
+    const payloadRatio = Math.min(1, (features.avg_packet_size || 0) / 1500);
+    const ackOverhead = (features.tcp_ack_count || 0) / Math.max(1, features.packet_count || 1);
+    const protocolEfficiency = Math.max(0, 1 - ackOverhead);
+    const retransWaste = ((features.tcp_rst_count || 0) + (features.tcp_fin_count || 0)) / Math.max(1, features.packet_count || 1);
+    const retransEfficiency = Math.max(0, 1 - retransWaste);
 
     const efficiency = (payloadRatio * 0.4 + protocolEfficiency * 0.3 + retransEfficiency * 0.3) * 100;
-    return efficiency.toFixed(1);
+    // Clamp to 0-100 range
+    return Math.max(0, Math.min(100, efficiency)).toFixed(1);
 }
 
 function calculateDNSHealth(features) {

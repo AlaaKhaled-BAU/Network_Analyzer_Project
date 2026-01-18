@@ -31,11 +31,11 @@ Analysis of all dashboard KPIs - whether each can be extracted from `raw_packets
 
 | KPI | Source | Feasible? | How |
 |-----|--------|-----------|-----|
-| **Network Health** | Derived | ✅ YES | Formula using `syn_to_synack_ratio`, `tcp_count`, `arp_count` |
+| **Network Health** | Derived | ⚠️ Pending | Formula using `syn_to_synack_ratio`, `tcp_count`, `arp_count` (Not implemented in API yet) |
 | **Connection Quality** | Derived | ✅ YES | Use `syn_to_synack_ratio`, `half_open_count` |
 | **Protocol Diversity** | `aggregated_features` | ✅ YES | Entropy: `-Σ(p * log2(p))` where p = protocol_count/total |
 | **Traffic Efficiency** | Derived | ✅ YES | Formula using `avg_packet_size`, `tcp_ack_count`, `packet_count` |
-| **Health Gauge** | Derived | ✅ YES | Same as Network Health |
+| **Health Gauge** | Derived | ⚠️ Pending | Same as Network Health (Not implemented in API yet) |
 | **Connection Success** | `aggregated_features` | ✅ YES | `1 - syn_only_ratio` or `syn_to_synack_ratio` |
 | **TCP Flags Chart** | `raw_packets` | ✅ YES | Count: `SUM(tcp_syn)`, `SUM(tcp_ack)`, `SUM(tcp_fin)`, `SUM(tcp_rst)`, `SUM(tcp_psh)` |
 | **DNS Analysis** | `aggregated_features` | ✅ YES | `dns_query_count`, `query_rate_qps`, `unique_qnames_count`, `avg_subdomain_entropy` |

@@ -267,12 +267,14 @@ class MultiWindowAggregator:
 
     # ========== MAIN PIPELINE ==========
 
-    def process_file(self, filepath, label=None):
+    def process_file(self, filepath, label=None, window_sizes=None):
         """
-        Process file with all configured window sizes.
+        Process file with configured or specified window sizes.
         
-        Uses 'attack_label' column from CSV if present, otherwise uses
-        the provided label parameter or leaves it blank.
+        Args:
+            filepath: Path to the raw packet file (CSV/JSON).
+            label: Optional attack label override.
+            window_sizes: Optional list of window sizes to process (overrides init config).
 
         Returns:
             DataFrame with columns including 'window_size' to distinguish scales
@@ -294,8 +296,11 @@ class MultiWindowAggregator:
 
         all_records = []
 
+        # Determine which windows to process
+        windows_to_process = sorted(window_sizes) if window_sizes else self.window_sizes
+
         # Process each window size
-        for window_size in self.window_sizes:
+        for window_size in windows_to_process:
             logger.info(f"Processing {window_size}s windows...")
 
             # Reset ARP cache for each window size
