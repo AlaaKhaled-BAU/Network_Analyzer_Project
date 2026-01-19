@@ -124,7 +124,7 @@ class RawPacket(Base):
     __tablename__ = "raw_packets"
     id = Column(Integer, primary_key=True, autoincrement=True)
     timestamp = Column(Float, nullable=False, index=True)
-    interface = Column(String(255))
+    interface = Column(String(512))
     src_ip = Column(String(50), nullable=False, index=True)
     dst_ip = Column(String(50), nullable=False, index=True)
     protocol = Column(String(20), nullable=False, index=True)
@@ -147,15 +147,15 @@ class RawPacket(Base):
     arp_hwsrc = Column(String(50))
     arp_hwdst = Column(String(50))
     dns_query = Column(Boolean)
-    dns_qname = Column(String(255))
+    dns_qname = Column(String(512))
     dns_qtype = Column(Integer)
     dns_response = Column(Boolean)
     dns_answer_count = Column(Integer)
     dns_answer_size = Column(Integer)
     http_method = Column(String(10))
-    http_path = Column(String(500))
+    http_path = Column(String(2000))
     http_status_code = Column(String(10))
-    http_host = Column(String(255))
+    http_host = Column(String(512))
     inserted_at = Column(DateTime, nullable=False, default=lambda: datetime.now(LOCAL_TZ))
 
 
@@ -2651,6 +2651,224 @@ def startup_event():
     else:
         logger.warning("⚠️ ML model not loaded - predictions disabled")
 
+
+# ========== TELEGRAM BOT API ENDPOINTS ==========
+import subprocess
+
+# Configuration for ngrok
+NGROK_PATH = os.getenv("NGROK_PATH", r"D:\apps\ngrok\ngrok-v3-stable-windows-amd64\ngrok.exe")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
+# Global to track ngrok process
+ngrok_process = None
+
+
+@app.get("/api/telegram/status")
+async def get_telegram_status():
+    """Check if Telegram bot token is valid by calling getMe API"""
+    if not TELEGRAM_BOT_TOKEN:
+        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN not configured in .env"}
+    
+    try:
+        import requests as req
+        response = req.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe", timeout=10)
+        data = response.json()
+        
+        if data.get("ok"):
+            bot_info = data.get("result", {})
+            return {
+                "ok": True,
+                "bot_name": bot_info.get("first_name", "Unknown"),
+                "bot_username": bot_info.get("username", "Unknown"),
+                "can_read_messages": bot_info.get("can_read_all_group_messages", False)
+            }
+        else:
+            return {"ok": False, "error": data.get("description", "Unknown error")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/telegram/auto-setup")
+async def auto_setup_telegram():
+    """Start ngrok and set Telegram webhook automatically"""
+    global ngrok_process
+    
+    if not TELEGRAM_BOT_TOKEN:
+        return {"success": False, "error": "TELEGRAM_BOT_TOKEN not configured in .env"}
+    
+    if not os.path.exists(NGROK_PATH):
+        return {"success": False, "error": f"ngrok not found at: {NGROK_PATH}"}
+    
+    try:
+        import requests as req
+        
+        # Step 1: Check if ngrok is already running by querying its API
+        ngrok_url = None
+        try:
+            tunnels_response = req.get("http://localhost:4040/api/tunnels", timeout=2)
+            if tunnels_response.status_code == 200:
+                tunnels = tunnels_response.json().get("tunnels", [])
+                for tunnel in tunnels:
+                    if tunnel.get("proto") == "https":
+                        ngrok_url = tunnel.get("public_url")
+                        break
+        except:
+            pass  # ngrok not running yet
+        
+        # Step 2: If no tunnel found, start ngrok
+        if not ngrok_url:
+            logger.info("🚀 Starting ngrok...")
+            
+            # Kill any existing ngrok process we started
+            if ngrok_process:
+                try:
+                    ngrok_process.terminate()
+                except:
+                    pass
+            
+            # Start ngrok pointing to our server port (8000)
+            ngrok_process = subprocess.Popen(
+                [NGROK_PATH, "http", "8000"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            
+            # Wait for ngrok to start
+            import time
+            for _ in range(10):  # Try for 5 seconds
+                time.sleep(0.5)
+                try:
+                    tunnels_response = req.get("http://localhost:4040/api/tunnels", timeout=2)
+                    if tunnels_response.status_code == 200:
+                        tunnels = tunnels_response.json().get("tunnels", [])
+                        for tunnel in tunnels:
+                            if tunnel.get("proto") == "https":
+                                ngrok_url = tunnel.get("public_url")
+                                break
+                        if ngrok_url:
+                            break
+                except:
+                    pass
+            
+            if not ngrok_url:
+                return {"success": False, "error": "Failed to get ngrok public URL. Check if ngrok is configured correctly."}
+        
+        # Step 3: Set Telegram webhook
+        webhook_url = f"{ngrok_url}/webhook/{TELEGRAM_BOT_TOKEN}"
+        set_response = req.get(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
+            params={"url": webhook_url},
+            timeout=10
+        )
+        set_data = set_response.json()
+        
+        if set_data.get("ok"):
+            logger.info(f"✅ Telegram webhook set: {ngrok_url}")
+            return {
+                "success": True,
+                "webhook_url": webhook_url,
+                "ngrok_url": ngrok_url,
+                "message": "Webhook configured successfully!"
+            }
+        else:
+            return {"success": False, "error": set_data.get("description", "Failed to set webhook")}
+            
+    except Exception as e:
+        logger.error(f"Auto-setup failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/webhook/{token}")
+async def receive_telegram_webhook(token: str, request: Request):
+    """Receive webhook updates from Telegram"""
+    if token != TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid token")
+    
+    try:
+        data = await request.json()
+        
+        if "message" in data:
+            chat_id = data["message"]["chat"]["id"]
+            text = data["message"].get("text", "")
+            
+            # Load existing chat IDs
+            chat_ids_file = Path(__file__).parent / "chat_ids.json"
+            registered_users = set()
+            
+            if chat_ids_file.exists():
+                try:
+                    with open(chat_ids_file, "r") as f:
+                        registered_users = set(json.load(f))
+                except:
+                    pass
+            
+            # Register new user
+            if chat_id not in registered_users:
+                registered_users.add(chat_id)
+                with open(chat_ids_file, "w") as f:
+                    json.dump(list(registered_users), f)
+                logger.info(f"📱 New Telegram user registered: {chat_id}")
+            
+            # Send welcome message
+            if text == "/start":
+                import requests as req
+                req.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                    data={
+                        "chat_id": chat_id,
+                        "text": "🛡️ Welcome to NetGuardian Pro!\n\nYou will now receive security alerts when network attacks are detected.",
+                        "parse_mode": "HTML"
+                    }
+                )
+        
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"ok": False}
+
+
+class BroadcastMessage(BaseModel):
+    message: str
+
+
+@app.post("/api/telegram/broadcast")
+async def broadcast_telegram_message(broadcast: BroadcastMessage):
+    """Send a message to all registered Telegram users"""
+    if not TELEGRAM_BOT_TOKEN:
+        return {"error": "TELEGRAM_BOT_TOKEN not configured"}
+    
+    # Load chat IDs
+    chat_ids_file = Path(__file__).parent / "chat_ids.json"
+    registered_users = set()
+    
+    if chat_ids_file.exists():
+        try:
+            with open(chat_ids_file, "r") as f:
+                registered_users = set(json.load(f))
+        except:
+            pass
+    
+    if not registered_users:
+        return {"sent_to": 0, "total_users": 0, "error": "No registered users"}
+    
+    import requests as req
+    sent_count = 0
+    
+    for chat_id in registered_users:
+        try:
+            response = req.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                data={"chat_id": chat_id, "text": broadcast.message, "parse_mode": "HTML"},
+                timeout=5
+            )
+            if response.json().get("ok"):
+                sent_count += 1
+        except Exception as e:
+            logger.warning(f"Failed to send to {chat_id}: {e}")
+    
+    logger.info(f"📨 Broadcast sent to {sent_count}/{len(registered_users)} users")
+    return {"sent_to": sent_count, "total_users": len(registered_users)}
 
 @app.on_event("shutdown")
 def shutdown_event():

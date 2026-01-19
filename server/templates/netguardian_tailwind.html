@@ -563,29 +563,28 @@
                         </div>
                     </div>
                     <div class="flex items-center space-x-2">
-                        <div id="bot-status-indicator" class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                        <span id="bot-status-text" class="text-sm text-green-400">Bot Active</span>
+                        <div id="bot-status-indicator" class="w-3 h-3 bg-gray-500 rounded-full"></div>
+                        <span id="bot-status-text" class="text-sm text-gray-400">Checking...</span>
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <!-- Bot Configuration -->
+                    <!-- Bot Setup -->
                     <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
                         <h4 class="text-sm font-semibold mb-3 flex items-center">
                             <i data-feather="settings" class="w-4 h-4 mr-2"></i>
-                            ⚙ Bot Configuration
+                            ⚙ Bot Setup
                         </h4>
                         <div class="space-y-3">
-                            <div>
-                                <label class="text-xs text-gray-400 block mb-1">Webhook URL (ngrok)</label>
-                                <input type="text" id="webhookUrl" placeholder="https://your-ngrok-url.io"
-                                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            </div>
-                            <button onclick="setTelegramWebhook()"
-                                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-medium">
-                                ✔ Set Webhook
+                            <button onclick="checkTelegramStatus()"
+                                class="w-full bg-gray-600 hover:bg-gray-700 text-white py-2 rounded text-sm font-medium">
+                                🔍 Check Bot Status
                             </button>
-                            <div id="webhook-status" class="text-xs"></div>
+                            <button onclick="autoSetupTelegram()"
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-medium">
+                                🚀 Auto Setup (ngrok + Webhook)
+                            </button>
+                            <div id="webhook-status" class="text-xs mt-2"></div>
                         </div>
                     </div>
 
@@ -602,7 +601,7 @@
                                 <span id="subscriber-count">
                                     👥 0 subscribers
                                 </span>
-                                <button onclick="sendSecurityAlert()"
+                                <button onclick="broadcastAlert()"
                                     class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium">
                                     ✈ Send Alert
                                 </button>
@@ -615,33 +614,22 @@
                     <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
                         <h4 class="text-sm font-semibold mb-3 flex items-center">
                             <i data-feather="bar-chart-2" class="w-4 h-4 mr-2"></i>
-                            📊 Bot Statistics
+                            📊 Bot Info
                         </h4>
                         <div class="space-y-3">
                             <div class="flex justify-between items-center py-2 border-b border-gray-700">
-                                <span class="text-xs text-gray-400">Total Subscribers</span>
-                                <span id="total-subscribers" class="text-sm font-bold text-blue-400">0</span>
+                                <span class="text-xs text-gray-400">Bot Name</span>
+                                <span id="bot-name" class="text-sm font-bold text-blue-400">--</span>
                             </div>
                             <div class="flex justify-between items-center py-2 border-b border-gray-700">
-                                <span class="text-xs text-gray-400">Alerts Sent Today</span>
-                                <span id="alerts-sent" class="text-sm font-bold text-green-400">0</span>
+                                <span class="text-xs text-gray-400">Username</span>
+                                <span id="bot-username" class="text-sm font-bold text-green-400">--</span>
                             </div>
                             <div class="flex justify-between items-center py-2">
-                                <span class="text-xs text-gray-400">Last Alert</span>
-                                <span id="last-alert-time" class="text-xs text-gray-500">Never</span>
+                                <span class="text-xs text-gray-400">Webhook</span>
+                                <span id="webhook-active" class="text-xs text-gray-500">Not Set</span>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Recent Messages -->
-                <div class="mt-4 bg-gray-800 rounded-lg p-4 border border-gray-700">
-                    <h4 class="text-sm font-semibold mb-3 flex items-center">
-                        <i data-feather="message-circle" class="w-4 h-4 mr-2"></i>
-                        💬 Recent Bot Messages
-                    </h4>
-                    <div id="bot-messages" class="space-y-2 max-h-48 overflow-y-auto">
-                        <div class="text-center text-gray-500 text-xs py-4">No messages yet</div>
                     </div>
                 </div>
             </div>
@@ -3032,23 +3020,27 @@
                 const response = await fetch(`${API_BASE_URL}/api/packets?limit=1000`);
                 const data = await response.json();
 
-                if (data.length === 0) {
+                // Handle different response formats
+                const packets = Array.isArray(data) ? data : (data.packets || []);
+
+                if (!packets || packets.length === 0) {
                     alert("No packets found to export.");
                     return;
                 }
 
                 // Calculate Interval (Packets sorted DESC usually)
-                const end = data[0].timestamp || "N/A";
-                const start = data[data.length - 1].timestamp || "N/A";
+                const end = packets[0]?.timestamp || packets[0]?.captured_at || "N/A";
+                const start = packets[packets.length - 1]?.timestamp || packets[packets.length - 1]?.captured_at || "N/A";
 
                 let csv = `# Generated By: NetGuardian Pro\n`;
                 csv += `# Report Type: Raw Packet Dump\n`;
                 csv += `# Data Interval: ${start} - ${end}\n`;
 
-                const headers = Object.keys(data[0]).join(",");
+                const headers = Object.keys(packets[0]).join(",");
+
                 csv += headers + "\n";
 
-                data.forEach(row => {
+                packets.forEach(row => {
                     const line = Object.values(row).map(v => {
                         // Escape quotes and commas
                         const s = String(v).replace(/"/g, '""');
@@ -3223,6 +3215,109 @@
 
         console.log('✅ NetGuardian Pro initialized with auto-refresh (10s interval)');
         console.log('📡 API URL:', API_BASE_URL);
+
+        // ========== TELEGRAM BOT FUNCTIONS ==========
+
+        async function checkTelegramStatus() {
+            const statusDiv = document.getElementById('webhook-status');
+            const indicator = document.getElementById('bot-status-indicator');
+            const statusText = document.getElementById('bot-status-text');
+
+            statusDiv.innerHTML = '<span class="text-yellow-400">⏳ Checking bot status...</span>';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/telegram/status`);
+                const data = await response.json();
+
+                if (data.ok) {
+                    indicator.className = 'w-3 h-3 bg-green-500 rounded-full animate-pulse';
+                    statusText.textContent = 'Bot Active';
+                    statusText.className = 'text-sm text-green-400';
+
+                    document.getElementById('bot-name').textContent = data.bot_name;
+                    document.getElementById('bot-username').textContent = '@' + data.bot_username;
+
+                    statusDiv.innerHTML = '<span class="text-green-400">✅ Bot token is valid!</span>';
+                } else {
+                    indicator.className = 'w-3 h-3 bg-red-500 rounded-full';
+                    statusText.textContent = 'Bot Error';
+                    statusText.className = 'text-sm text-red-400';
+                    statusDiv.innerHTML = `<span class="text-red-400">❌ ${data.error}</span>`;
+                }
+            } catch (error) {
+                indicator.className = 'w-3 h-3 bg-red-500 rounded-full';
+                statusText.textContent = 'Offline';
+                statusText.className = 'text-sm text-red-400';
+                statusDiv.innerHTML = `<span class="text-red-400">❌ Failed to check: ${error.message}</span>`;
+            }
+        }
+
+        async function autoSetupTelegram() {
+            const statusDiv = document.getElementById('webhook-status');
+            const webhookActive = document.getElementById('webhook-active');
+
+            statusDiv.innerHTML = '<span class="text-yellow-400">🚀 Starting ngrok and setting webhook...</span>';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/telegram/auto-setup`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.innerHTML = `<span class="text-green-400">✅ ${data.message}</span><br><span class="text-xs text-gray-400">${data.ngrok_url}</span>`;
+                    webhookActive.textContent = '✅ Active';
+                    webhookActive.className = 'text-xs text-green-400';
+
+                    // Also check bot status to update the header
+                    checkTelegramStatus();
+                } else {
+                    statusDiv.innerHTML = `<span class="text-red-400">❌ ${data.error}</span>`;
+                    webhookActive.textContent = 'Failed';
+                    webhookActive.className = 'text-xs text-red-400';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<span class="text-red-400">❌ Setup failed: ${error.message}</span>`;
+            }
+        }
+
+        async function broadcastAlert() {
+            const message = document.getElementById('alertMessage').value;
+            const statusDiv = document.getElementById('alert-status');
+
+            if (!message.trim()) {
+                statusDiv.innerHTML = '<span class="text-yellow-400">⚠️ Please enter a message</span>';
+                return;
+            }
+
+            statusDiv.innerHTML = '<span class="text-yellow-400">📤 Sending...</span>';
+
+            try {
+                // Use the telegram_bot broadcast endpoint (port 5000 if running separately)
+                // Or we can add a broadcast endpoint to main.py
+                const response = await fetch(`${API_BASE_URL}/api/telegram/broadcast`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+                const data = await response.json();
+
+                if (data.sent_to !== undefined) {
+                    statusDiv.innerHTML = `<span class="text-green-400">✅ Sent to ${data.sent_to} users</span>`;
+                    document.getElementById('alertMessage').value = '';
+                } else if (data.error) {
+                    statusDiv.innerHTML = `<span class="text-red-400">❌ ${data.error}</span>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<span class="text-red-400">❌ Failed: ${error.message}</span>`;
+            }
+        }
+
+        // Check Telegram status on page load (Security page)
+        document.addEventListener('DOMContentLoaded', () => {
+            // Delay to ensure page is fully loaded
+            setTimeout(checkTelegramStatus, 2000);
+        });
     </script>
 </body>
 
