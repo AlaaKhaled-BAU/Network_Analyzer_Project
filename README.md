@@ -50,14 +50,20 @@ python sender.py                 # Upload only (separate terminal)
                                                           │ raw + 5s features │
                                                           └─────────┬─────────┘
                                                                     │
+                                                          ┌─────────┴─────────┐
+                                                          │ PostgreSQL        │
+                                                          │ raw + 5s features │
+                                                          └─────────┬─────────┘
+                                                                    │
                                              ┌──────────────────────┴──────────────────────┐
-                                             │ Background Thread (every 10s)               │
-                                             │ ┌─────────────┐    ┌─────────────┐          │
-                                             │ │ 6× 5s → 30s │ →  │ ML Predict  │ → Alert  │
-                                             │ └─────────────┘    └─────────────┘          │
-                                             │ ┌─────────────┐    ┌─────────────┐          │
-                                             │ │36× 5s → 180s│ →  │ ML Predict  │ → Alert  │
-                                             │ └─────────────┘    └─────────────┘          │
+                                             │ Background Threads                          │
+                                             │                                             │
+                                             │ 1. 5s Prediction (Polling)                  │
+                                             │    [Query Unlabeled] → [ML Predict] → Alert │
+                                             │                                             │
+                                             │ 2. Cascading & Prediction (Inline)          │
+                                             │    [6× 5s → 30s ] → [ML Predict] → Alert    │
+                                             │    [36× 5s → 180s] → [ML Predict] → Alert   │
                                              └─────────────────────────────────────────────┘
 ```
 
