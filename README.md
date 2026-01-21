@@ -50,11 +50,6 @@ python sender.py                 # Upload only (separate terminal)
                                                           │ raw + 5s features │
                                                           └─────────┬─────────┘
                                                                     │
-                                                          ┌─────────┴─────────┐
-                                                          │ PostgreSQL        │
-                                                          │ raw + 5s features │
-                                                          └─────────┬─────────┘
-                                                                    │
                                              ┌──────────────────────┴──────────────────────┐
                                              │ Background Threads                          │
                                              │                                             │

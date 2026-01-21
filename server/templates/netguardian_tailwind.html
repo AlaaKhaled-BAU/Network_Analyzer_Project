@@ -1998,21 +1998,42 @@
         }
 
         // ==================== SECURITY PAGE ====================
+        
+        // State for holding attack alerts
+        let attackHoldExpiry = 0;
+        let lastAttackData = null;
+
         async function loadSecurity() {
             try {
                 const mlResponse = await fetch(`${API_BASE_URL}/api/ml/predict`);
                 const mlData = await mlResponse.json();
+                
+                // Determine what to display
+                let displayData = mlData;
+                const now = Date.now();
+                const isAttack = mlData.threat_level && mlData.threat_level !== 'NONE' && mlData.threat_level !== 'LOW';
 
-                document.getElementById('mlAttackType').textContent = mlData.attack_type || 'Unknown';
-                document.getElementById('mlConfidence').textContent = (mlData.confidence || 0).toFixed(1) + '%';
-                document.getElementById('mlThreatLevel').textContent = mlData.threat_level || 'NONE';
+                if (isAttack) {
+                    // It's an attack: update hold time and store data
+                    attackHoldExpiry = now + 10000; // Hold for 10 seconds
+                    lastAttackData = mlData;
+                } else {
+                    // It's normal: check if we are in hold period
+                    if (now < attackHoldExpiry && lastAttackData) {
+                        displayData = lastAttackData;
+                    }
+                }
+
+                document.getElementById('mlAttackType').textContent = displayData.attack_type || 'Unknown';
+                document.getElementById('mlConfidence').textContent = (displayData.confidence || 0).toFixed(1) + '%';
+                document.getElementById('mlThreatLevel').textContent = displayData.threat_level || 'NONE';
 
                 const alertCard = document.getElementById('security-alert');
                 const statusEl = document.getElementById('security-status');
                 const messageEl = document.getElementById('security-message');
 
-                if (mlData.threat_level && mlData.threat_level !== 'NONE' && mlData.threat_level !== 'LOW') {
-                    alertCard.className = mlData.threat_level === 'CRITICAL' ?
+                if (displayData.threat_level && displayData.threat_level !== 'NONE' && displayData.threat_level !== 'LOW') {
+                    alertCard.className = displayData.threat_level === 'CRITICAL' ?
                         'bg-gradient-to-r from-red-900 to-red-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-red-700' :
                         'bg-gradient-to-r from-orange-900 to-orange-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-orange-700';
 
@@ -2021,7 +2042,7 @@
                     iconContainer.innerHTML = '<i data-feather="alert-triangle" class="w-8 h-8"></i>';
 
                     statusEl.textContent = 'Security Alert';
-                    messageEl.textContent = `${mlData.attack_type} detected with ${mlData.confidence.toFixed(1)}% confidence. Immediate action may be required.`;
+                    messageEl.textContent = `${displayData.attack_type} detected with ${displayData.confidence.toFixed(1)}% confidence. Immediate action may be required.`;
                     feather.replace();
                 } else {
                     alertCard.className = 'bg-gradient-to-r from-green-900 to-green-800 rounded-xl p-6 mb-8 flex items-center space-x-4 border border-green-700';
@@ -2041,7 +2062,7 @@
                 const dnsHealth = calculateDNSHealth(features);
                 document.getElementById('securityDnsHealth').textContent = dnsHealth.toFixed(0);
 
-                await loadMLProbabilitiesChart(mlData);
+                await loadMLProbabilitiesChart(mlData); // ALWAYS show real-time probability
                 await loadPortHeatmap();
                 await loadConnectionFailureChart(features);
 
