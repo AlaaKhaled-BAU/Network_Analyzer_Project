@@ -1,7 +1,7 @@
 # JSON-only sniffer - no CSV
 import json
 import argparse
-from scapy.all import sniff, get_if_list, IP, IPv6, TCP, UDP, ICMP, ICMPv6EchoRequest, ARP, DNS, DNSQR, DNSRR, Raw
+from scapy.all import sniff, get_if_list, Ether, IP, IPv6, TCP, UDP, ICMP, ICMPv6EchoRequest, ARP, DNS, DNSQR, DNSRR, Raw, BOOTP, DHCP as DHCP_Layer
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -32,7 +32,7 @@ os.makedirs(PENDING_DIR, exist_ok=True)
 logger.info(f"Logs folder created at {LOGS_DIR}")
 
 # --- Configuration ---
-SAVE_INTERVAL = 5  # Save JSON every 5 seconds for real-time detection
+SAVE_INTERVAL = 2  # Save JSON every 2 seconds for real-time detection
 MAX_BUFFER_SIZE = 50000  # Max packets before forced save (prevents OOM)
 
 # --- File Generation Functions ---
@@ -109,6 +109,8 @@ def packet_summary(pkt, interface):
         'length': len(pkt),
         'src_port': None,
         'dst_port': None,
+        'src_mac': None,
+        'dst_mac': None,
         'tcp_flags': None,
         'tcp_syn': None,
         'tcp_ack': None,
@@ -133,8 +135,14 @@ def packet_summary(pkt, interface):
         'http_method': None,
         'http_path': None,
         'http_status_code': None,
-        'http_host': None
+        'http_host': None,
+        'dhcp_type': None
     }
+
+    # Ethernet Layer (L2) — capture MACs for all packets
+    if Ether in pkt:
+        summary['src_mac'] = pkt[Ether].src
+        summary['dst_mac'] = pkt[Ether].dst
 
     # IPv4
     if IP in pkt:
@@ -214,6 +222,18 @@ def packet_summary(pkt, interface):
                         summary['dns_answer_size'] = answer_size
                     except:
                         pass
+
+            # DHCP detection (ports 67/68)
+            if BOOTP in pkt:
+                try:
+                    dhcp_layer = pkt.getlayer(DHCP_Layer)
+                    if dhcp_layer:
+                        for opt in dhcp_layer.options:
+                            if isinstance(opt, tuple) and opt[0] == 'message-type':
+                                summary['dhcp_type'] = int(opt[1])
+                                break
+                except:
+                    pass
                         
         elif ICMP in pkt:
             icmp = pkt[ICMP]

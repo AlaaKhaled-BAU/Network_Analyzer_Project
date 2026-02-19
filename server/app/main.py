@@ -13,11 +13,12 @@ Features:
 - WebSocket real-time dashboard updates (/ws/dashboard)
 """
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, UploadFile, File, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Text, Boolean, BigInteger, desc, func
+from pydantic import BaseModel
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Text, Boolean, BigInteger, desc, func, Index
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.dialects.postgresql import JSON
 from datetime import datetime, timedelta, timezone
@@ -88,7 +89,7 @@ LABEL_ENCODER_PATH = MODEL_DIR / "label_encoder.pkl"
 FEATURE_NAMES_PATH = MODEL_DIR / "feature_names.pkl"
 
 # Prediction settings
-PREDICTION_INTERVAL = 10  # seconds between prediction checks
+PREDICTION_INTERVAL = 30  # seconds between prediction checks (fallback role only)
 CONFIDENCE_HIGH = 0.9
 CONFIDENCE_MEDIUM = 0.7
 
@@ -156,6 +157,10 @@ class RawPacket(Base):
     http_path = Column(String(2000))
     http_status_code = Column(String(10))
     http_host = Column(String(512))
+    # L2 / DHCP fields (added for new attack detection)
+    src_mac = Column(String(50))
+    dst_mac = Column(String(50))
+    dhcp_type = Column(Integer)
     inserted_at = Column(DateTime, nullable=False, default=lambda: datetime.now(LOCAL_TZ))
 
 
@@ -181,68 +186,66 @@ class AggregatedFeature(Base):
     unique_dst_ips = Column(Integer, default=0)
     unique_dst_ports = Column(Integer, default=0)
     
-    # TCP/DDoS/Scan features (13)
+    # TCP/DDoS/Scan features (15) — includes RST, FIN, ICMP redirect/broadcast
     tcp_syn_count = Column(Integer, default=0)
     tcp_ack_count = Column(Integer, default=0)
     syn_rate_pps = Column(Float, default=0.0)
-    syn_ack_rate_pps = Column(Float, default=0.0)
-    syn_to_synack_ratio = Column(Float, default=0.0)
+    tcp_rst_count = Column(Integer, default=0)
+    tcp_fin_count = Column(Integer, default=0)
+    rst_to_syn_ratio = Column(Float, default=0.0)
     half_open_count = Column(Integer, default=0)
     sequential_port_count = Column(Integer, default=0)
-    scan_rate_pps = Column(Float, default=0.0)
     distinct_targets_count = Column(Integer, default=0)
     syn_only_ratio = Column(Float, default=0.0)
     icmp_rate_pps = Column(Float, default=0.0)
     udp_rate_pps = Column(Float, default=0.0)
     udp_dest_port_count = Column(Integer, default=0)
+    icmp_redirect_count = Column(Integer, default=0)
+    icmp_broadcast_count = Column(Integer, default=0)
     
-    # Brute force features (6)
+    # Brute force features (3)
     ssh_connection_attempts = Column(Integer, default=0)
     ftp_connection_attempts = Column(Integer, default=0)
-    http_login_attempts = Column(Integer, default=0)
-    login_request_rate = Column(Float, default=0.0)
-    failed_login_count = Column(Integer, default=0)
     auth_attempts_per_min = Column(Float, default=0.0)
     
-    # ARP features (10)
+    # ARP features (8)
     arp_request_count = Column(Integer, default=0)
     arp_reply_count = Column(Integer, default=0)
     gratuitous_arp_count = Column(Integer, default=0)
     arp_binding_flap_count = Column(Integer, default=0)
     arp_reply_without_request_count = Column(Integer, default=0)
     unique_macs_per_ip_max = Column(Integer, default=0)
-    avg_macs_per_ip = Column(Float, default=0.0)
     duplicate_mac_ips = Column(Integer, default=0)
-    mac_ip_ratio = Column(Float, default=0.0)
     suspicious_mac_changes = Column(Integer, default=0)
     
-    # DNS features (14)
+    # DNS features (12)
     dns_query_count = Column(Integer, default=0)
     query_rate_qps = Column(Float, default=0.0)
     unique_qnames_count = Column(Integer, default=0)
     avg_subdomain_entropy = Column(Float, default=0.0)
     pct_high_entropy_queries = Column(Float, default=0.0)
     txt_record_count = Column(Integer, default=0)
-    avg_answer_size = Column(Float, default=0.0)
     distinct_record_types = Column(Integer, default=0)
     avg_query_interval_ms = Column(Float, default=0.0)
     avg_subdomain_length = Column(Float, default=0.0)
     max_subdomain_length = Column(Integer, default=0)
     avg_label_count = Column(Float, default=0.0)
     dns_to_udp_ratio = Column(Float, default=0.0)
-    udp_port_53_count = Column(Integer, default=0)
     
-    # Slowloris features (5)
+    # Slowloris features (4)
     open_conn_count = Column(Integer, default=0)
     avg_conn_duration = Column(Float, default=0.0)
     bytes_per_conn = Column(Float, default=0.0)
     partial_http_count = Column(Integer, default=0)
-    request_completion_ratio = Column(Float, default=0.0)
     
-    # NEW: Port category features (3)
-    tcp_ports_hit = Column(Integer, default=0)
-    udp_ports_hit = Column(Integer, default=0)
+    # Generic extras (3)
     remote_conn_port_hits = Column(Integer, default=0)
+    unique_src_mac_count = Column(Integer, default=0)
+    land_attack_count = Column(Integer, default=0)
+    
+    # DHCP features (2)
+    dhcp_discover_count = Column(Integer, default=0)
+    dhcp_discover_rate = Column(Float, default=0.0)
     
     # ML prediction results
     predicted_label = Column(String(50))
@@ -313,7 +316,7 @@ try:
     import sys
     sys.path.insert(0, str(APP_DIR))
     from MultiWindowAggregator import MultiWindowAggregator
-    aggregator = MultiWindowAggregator(window_sizes=[5, 30, 180])
+    aggregator = MultiWindowAggregator(window_sizes=[2, 5, 30, 180])
     AGGREGATOR_AVAILABLE = True
     logger.info("✅ MultiWindowAggregator loaded successfully")
 except ImportError as e:
@@ -486,15 +489,16 @@ def get_severity(confidence: float) -> str:
 
 
 def prepare_packet_dict(row):
-    """Prepare packet dictionary with proper type handling"""
+    """Prepare packet dictionary with proper type handling and safety truncation"""
     packet_dict = {}
     
     # Required fields
     packet_dict['timestamp'] = float(row.get('timestamp', 0))
-    packet_dict['interface'] = str(row.get('interface', 'eth0')) if pd.notna(row.get('interface')) else 'eth0'
-    packet_dict['src_ip'] = str(row.get('src_ip', '0.0.0.0')) if pd.notna(row.get('src_ip')) else '0.0.0.0'
-    packet_dict['dst_ip'] = str(row.get('dst_ip', '0.0.0.0')) if pd.notna(row.get('dst_ip')) else '0.0.0.0'
-    packet_dict['protocol'] = str(row.get('protocol', 'UNKNOWN')) if pd.notna(row.get('protocol')) else 'UNKNOWN'
+    # Truncate string fields to 255 to match DB schema (even if model says 512, DB might be old)
+    packet_dict['interface'] = str(row.get('interface', 'eth0'))[:255] if pd.notna(row.get('interface')) else 'eth0'
+    packet_dict['src_ip'] = str(row.get('src_ip', '0.0.0.0'))[:50] if pd.notna(row.get('src_ip')) else '0.0.0.0'
+    packet_dict['dst_ip'] = str(row.get('dst_ip', '0.0.0.0'))[:50] if pd.notna(row.get('dst_ip')) else '0.0.0.0'
+    packet_dict['protocol'] = str(row.get('protocol', 'UNKNOWN'))[:20] if pd.notna(row.get('protocol')) else 'UNKNOWN'
     packet_dict['length'] = int(row.get('length', 0)) if pd.notna(row.get('length')) else 0
     
     # Optional port fields
@@ -502,7 +506,7 @@ def prepare_packet_dict(row):
     packet_dict['dst_port'] = int(row.get('dst_port', 0)) if pd.notna(row.get('dst_port')) else None
     
     # TCP fields
-    packet_dict['tcp_flags'] = str(row.get('tcp_flags', '')) if pd.notna(row.get('tcp_flags')) else None
+    packet_dict['tcp_flags'] = str(row.get('tcp_flags', ''))[:50] if pd.notna(row.get('tcp_flags')) else None
     packet_dict['tcp_syn'] = bool(row.get('tcp_syn')) if pd.notna(row.get('tcp_syn')) else None
     packet_dict['tcp_ack'] = bool(row.get('tcp_ack')) if pd.notna(row.get('tcp_ack')) else None
     packet_dict['tcp_fin'] = bool(row.get('tcp_fin')) if pd.notna(row.get('tcp_fin')) else None
@@ -517,24 +521,30 @@ def prepare_packet_dict(row):
     
     # ARP fields
     packet_dict['arp_op'] = int(row.get('arp_op', 0)) if pd.notna(row.get('arp_op')) else None
-    packet_dict['arp_psrc'] = str(row.get('arp_psrc', '')) if pd.notna(row.get('arp_psrc')) else None
-    packet_dict['arp_pdst'] = str(row.get('arp_pdst', '')) if pd.notna(row.get('arp_pdst')) else None
-    packet_dict['arp_hwsrc'] = str(row.get('arp_hwsrc', '')) if pd.notna(row.get('arp_hwsrc')) else None
-    packet_dict['arp_hwdst'] = str(row.get('arp_hwdst', '')) if pd.notna(row.get('arp_hwdst')) else None
+    packet_dict['arp_psrc'] = str(row.get('arp_psrc', ''))[:50] if pd.notna(row.get('arp_psrc')) else None
+    packet_dict['arp_pdst'] = str(row.get('arp_pdst', ''))[:50] if pd.notna(row.get('arp_pdst')) else None
+    packet_dict['arp_hwsrc'] = str(row.get('arp_hwsrc', ''))[:50] if pd.notna(row.get('arp_hwsrc')) else None
+    packet_dict['arp_hwdst'] = str(row.get('arp_hwdst', ''))[:50] if pd.notna(row.get('arp_hwdst')) else None
     
     # DNS fields
     packet_dict['dns_query'] = bool(row.get('dns_query')) if pd.notna(row.get('dns_query')) else None
-    packet_dict['dns_qname'] = str(row.get('dns_qname', '')) if pd.notna(row.get('dns_qname')) else None
+    packet_dict['dns_qname'] = str(row.get('dns_qname', ''))[:255] if pd.notna(row.get('dns_qname')) else None
     packet_dict['dns_qtype'] = int(row.get('dns_qtype', 0)) if pd.notna(row.get('dns_qtype')) else None
     packet_dict['dns_response'] = bool(row.get('dns_response')) if pd.notna(row.get('dns_response')) else None
     packet_dict['dns_answer_count'] = int(row.get('dns_answer_count', 0)) if pd.notna(row.get('dns_answer_count')) else None
     packet_dict['dns_answer_size'] = int(row.get('dns_answer_size', 0)) if pd.notna(row.get('dns_answer_size')) else None
     
     # HTTP fields
-    packet_dict['http_method'] = str(row.get('http_method', '')) if pd.notna(row.get('http_method')) and row.get('http_method') != 0 else None
-    packet_dict['http_path'] = str(row.get('http_path', '')) if pd.notna(row.get('http_path')) else None
-    packet_dict['http_status_code'] = str(row.get('http_status_code', '')) if pd.notna(row.get('http_status_code')) and row.get('http_status_code') != 0 else None
-    packet_dict['http_host'] = str(row.get('http_host', '')) if pd.notna(row.get('http_host')) else None
+    packet_dict['http_method'] = str(row.get('http_method', ''))[:10] if pd.notna(row.get('http_method')) and row.get('http_method') != 0 else None
+    # Truncate http_path to 255 just to be safe, though model says 2000
+    packet_dict['http_path'] = str(row.get('http_path', ''))[:255] if pd.notna(row.get('http_path')) else None
+    packet_dict['http_status_code'] = str(row.get('http_status_code', ''))[:10] if pd.notna(row.get('http_status_code')) and row.get('http_status_code') != 0 else None
+    packet_dict['http_host'] = str(row.get('http_host', ''))[:255] if pd.notna(row.get('http_host')) else None
+    
+    # L2 / DHCP fields
+    packet_dict['src_mac'] = str(row.get('src_mac', ''))[:50] if pd.notna(row.get('src_mac')) else None
+    packet_dict['dst_mac'] = str(row.get('dst_mac', ''))[:50] if pd.notna(row.get('dst_mac')) else None
+    packet_dict['dhcp_type'] = int(row.get('dhcp_type', 0)) if pd.notna(row.get('dhcp_type')) and row.get('dhcp_type') != 0 else None
     
     return packet_dict
 
@@ -900,7 +910,7 @@ def run_predictions():
 
 async def _process_packets(packets_list: list, db) -> dict:
     """Common packet processing logic for both ingestion methods"""
-    tmp_path = None
+    # tmp_path = None  <-- Removed, no longer needed
     
     try:
         # Convert to DataFrame
@@ -913,12 +923,6 @@ async def _process_packets(packets_list: list, db) -> dict:
                 df["timestamp"] = df["timestamp"].astype("int64") / 1e9
         
         df.fillna(0, inplace=True)
-        
-        # Save as temp CSV for aggregator
-        if AGGREGATOR_AVAILABLE:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode='w', newline='') as tmp:
-                tmp_path = tmp.name
-                df.to_csv(tmp_path, index=False)
         
         # Store raw packets
         raw_rows = []
@@ -934,13 +938,16 @@ async def _process_packets(packets_list: list, db) -> dict:
         db.commit()
         logger.info(f"✅ Stored {len(raw_rows)} raw packets")
         
-        # Run aggregation
+        # Run aggregation and inline prediction
         agg_rows_count = 0
-        if AGGREGATOR_AVAILABLE and tmp_path:
+        predicted_count = 0
+        
+        if AGGREGATOR_AVAILABLE:
             try:
-                # 2. Run aggregation (Synchronous for 5s only)
+                # 2. Run aggregation directly on DataFrame (Synchronous for 5s only)
                 # We only generate 5s windows here. 30s and 180s are handled by background cascading.
-                agg_df = aggregator.process_file(tmp_path, window_sizes=[5])
+                # Use process_dataframe instead of process_file -> NO TEMP FILE I/O
+                agg_df = aggregator.process_dataframe(df, window_sizes=[2, 5])
                 
                 # 3. Store aggregated features in DB
                 agg_rows = []
@@ -965,25 +972,43 @@ async def _process_packets(packets_list: list, db) -> dict:
                     
                     agg_rows.append(AggregatedFeature(**agg_dict))
                 
-                db.bulk_save_objects(agg_rows)
+                # Use add_all instead of bulk_save_objects so objects are tracked by session
+                # This allows us to modify them (add predictions) and have it persist on next commit
+                db.add_all(agg_rows)
                 db.commit()
+                
                 agg_rows_count = len(agg_rows)
-                logger.info(f"✅ Stored {agg_rows_count} aggregated features (5s, 30s, 180s windows)")
+                logger.info(f"✅ Stored {agg_rows_count} aggregated features")
+                
+                # 4. Inline Prediction (Phase B optimization)
+                # Immediately run prediction on the newly created features
+                if MODEL_LOADED:
+                    for agg_row in agg_rows:
+                        # process_dataframe might return older windows too if backfilling? 
+                        # create_windows only looks at current batch timeframe usually.
+                        predict_and_alert(db, agg_row)
+                    
+                    # Commit updates (predicted_label, confidence) and new alerts
+                    db.commit()
+                    predicted_count = len(agg_rows)
+                    logger.info(f"🚀 Inline predictions: {predicted_count}")
                 
             except Exception as e:
-                logger.error(f"Aggregation error: {e}")
-                db.rollback()
+                logger.error(f"Aggregation/Prediction error: {e}")
+                # Don't rollback the raw_packets, they are already committed
+                # We only catch aggregation errors here
         
         return {
             "status": "success",
             "raw_packets": len(raw_rows),
             "aggregated_features": agg_rows_count,
+            "inline_predictions": predicted_count,
             "timestamp": datetime.utcnow().isoformat()
         }
         
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)
+        # No cleanup needed
+        pass
 
 
 @app.post("/ingest_packets")
@@ -2688,94 +2713,31 @@ async def get_telegram_status():
         return {"ok": False, "error": str(e)}
 
 
-@app.post("/api/telegram/auto-setup")
-async def auto_setup_telegram():
-    """Start ngrok and set Telegram webhook automatically"""
-    global ngrok_process
-    
-    if not TELEGRAM_BOT_TOKEN:
-        return {"success": False, "error": "TELEGRAM_BOT_TOKEN not configured in .env"}
-    
-    if not os.path.exists(NGROK_PATH):
-        return {"success": False, "error": f"ngrok not found at: {NGROK_PATH}"}
+@app.get("/api/telegram/webhook/set")
+async def set_telegram_webhook_manual(url: str):
+    """Manually set Telegram webhook URL"""
+    token = TELEGRAM_BOT_TOKEN
+    if not token:
+        return {"success": False, "error": "TELEGRAM_BOT_TOKEN not configured"}
     
     try:
         import requests as req
+        webhook_url = f"{url}/webhook/{token}"
         
-        # Step 1: Check if ngrok is already running by querying its API
-        ngrok_url = None
-        try:
-            tunnels_response = req.get("http://localhost:4040/api/tunnels", timeout=2)
-            if tunnels_response.status_code == 200:
-                tunnels = tunnels_response.json().get("tunnels", [])
-                for tunnel in tunnels:
-                    if tunnel.get("proto") == "https":
-                        ngrok_url = tunnel.get("public_url")
-                        break
-        except:
-            pass  # ngrok not running yet
-        
-        # Step 2: If no tunnel found, start ngrok
-        if not ngrok_url:
-            logger.info("🚀 Starting ngrok...")
-            
-            # Kill any existing ngrok process we started
-            if ngrok_process:
-                try:
-                    ngrok_process.terminate()
-                except:
-                    pass
-            
-            # Start ngrok pointing to our server port (8000)
-            ngrok_process = subprocess.Popen(
-                [NGROK_PATH, "http", "8000"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            )
-            
-            # Wait for ngrok to start
-            import time
-            for _ in range(10):  # Try for 5 seconds
-                time.sleep(0.5)
-                try:
-                    tunnels_response = req.get("http://localhost:4040/api/tunnels", timeout=2)
-                    if tunnels_response.status_code == 200:
-                        tunnels = tunnels_response.json().get("tunnels", [])
-                        for tunnel in tunnels:
-                            if tunnel.get("proto") == "https":
-                                ngrok_url = tunnel.get("public_url")
-                                break
-                        if ngrok_url:
-                            break
-                except:
-                    pass
-            
-            if not ngrok_url:
-                return {"success": False, "error": "Failed to get ngrok public URL. Check if ngrok is configured correctly."}
-        
-        # Step 3: Set Telegram webhook
-        webhook_url = f"{ngrok_url}/webhook/{TELEGRAM_BOT_TOKEN}"
-        set_response = req.get(
-            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
+        # Call Telegram API
+        response = req.get(
+            f"https://api.telegram.org/bot{token}/setWebhook",
             params={"url": webhook_url},
             timeout=10
         )
-        set_data = set_response.json()
+        data = response.json()
         
-        if set_data.get("ok"):
-            logger.info(f"✅ Telegram webhook set: {ngrok_url}")
-            return {
-                "success": True,
-                "webhook_url": webhook_url,
-                "ngrok_url": ngrok_url,
-                "message": "Webhook configured successfully!"
-            }
+        if data.get("ok"):
+            logger.info(f"✅ Manual webhook set: {webhook_url}")
+            return {"success": True, "message": f"Webhook set to {webhook_url}"}
         else:
-            return {"success": False, "error": set_data.get("description", "Failed to set webhook")}
-            
+            return {"success": False, "error": data.get("description", "Failed to set webhook")}
     except Exception as e:
-        logger.error(f"Auto-setup failed: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -2869,6 +2831,7 @@ async def broadcast_telegram_message(broadcast: BroadcastMessage):
     
     logger.info(f"📨 Broadcast sent to {sent_count}/{len(registered_users)} users")
     return {"sent_to": sent_count, "total_users": len(registered_users)}
+
 
 @app.on_event("shutdown")
 def shutdown_event():

@@ -1,6 +1,6 @@
 """
 Attack Runner GUI - Easy interface for launching attacks
-With checkbox selection for variations!
+With Manual Configuration Mode and Presets!
 
 THEMED VERSION: Dark Red theme (Red Team concept)
 """
@@ -152,7 +152,7 @@ class CheckboxTreeview(ttk.Treeview):
 class AttackRunnerGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Attack Runner")
+        self.root.title("Attack Runner Pro")
         
         # Position window (left half by default)
         screen_width = root.winfo_screenwidth()
@@ -162,7 +162,7 @@ class AttackRunnerGUI:
         x_position = 0
         y_position = 0
         self.root.geometry(f"{window_width}x{window_height}+{x_position}+{y_position}")
-        self.root.minsize(800, 700)
+        self.root.minsize(900, 750)
         
         # Apply dark theme
         self.root.configure(bg=BG_COLOR)
@@ -171,12 +171,17 @@ class AttackRunnerGUI:
         self.config = self.load_config()
         self.interfaces = []
         self.variation_map = {}  # item_id -> (attack_type, index, variation)
+        self.manual_widgets = {} # Stores widgets for manual config
         
         self.setup_styles()
         self.setup_ui()
         self.load_interfaces()
         self.populate_attacks()
         self.update_time_estimate()
+        
+        # Trigger initial manual fields update
+        if hasattr(self, 'manual_type_combo'):
+            self.update_manual_fields()
     
     def setup_styles(self):
         """Configure ttk styles for red team theme"""
@@ -186,6 +191,7 @@ class AttackRunnerGUI:
         # Frame styles
         style.configure("TFrame", background=BG_COLOR)
         style.configure("Card.TFrame", background=CARD_BG)
+        style.configure("Inner.TFrame", background=CARD_BG)
         
         # Label styles
         style.configure("TLabel", background=BG_COLOR, foreground=TEXT_COLOR, font=("Segoe UI", 10))
@@ -197,6 +203,11 @@ class AttackRunnerGUI:
         # LabelFrame styles  
         style.configure("Card.TLabelframe", background=CARD_BG, relief="flat", borderwidth=2)
         style.configure("Card.TLabelframe.Label", font=("Segoe UI", 11, "bold"), foreground=ACCENT_COLOR, background=CARD_BG)
+        
+        # Notebook styles
+        style.configure("TNotebook", background=BG_COLOR, borderwidth=0)
+        style.configure("TNotebook.Tab", background="#3d3030", foreground=TEXT_COLOR, padding=[12, 4], font=("Segoe UI", 10))
+        style.map("TNotebook.Tab", background=[("selected", ACCENT_COLOR)], foreground=[("selected", "#ffffff")])
         
         # Button styles
         style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"), background=ACCENT_COLOR, foreground="#ffffff", borderwidth=0, padding=[12, 8])
@@ -258,14 +269,7 @@ class AttackRunnerGUI:
             'capture_duration': 180,
             'cooldown_period': 10,
             'attacks': {
-                'syn_flood': {'variations': [{'port': 80, 'description': 'HTTP Default'}]},
-                'udp_flood': {'variations': [{'port': 53, 'description': 'DNS Default'}]},
-                'icmp_flood': {'variations': [{'count': 100, 'description': 'Default'}]},
-                'port_scan': {'variations': [{'ports': '1-1024', 'description': 'Default'}]},
-                'dns_tunnel': {'variations': [{'dns_server': '8.8.8.8', 'description': 'Google DNS'}]},
-                'arp_spoof': {'variations': [{'description': 'Default'}]},
-                'ssh_brute_force': {'variations': [{'port': 22, 'description': 'Default'}]},
-                'slowloris': {'variations': [{'port': 80, 'description': 'Default'}]}
+                'syn_flood': {'variations': [{'port': 80, 'description': 'HTTP Default'}]}
             }
         }
     
@@ -297,14 +301,14 @@ class AttackRunnerGUI:
         left = ttk.Frame(content)
         left.pack(side="left", fill="both", expand=True, padx=(0, 8))
         
-        # Network Configuration Card
+        # Network Configuration Card (Global)
         net_card = ttk.LabelFrame(left, text="🌐 Network Configuration", style="Card.TLabelframe", padding=12)
         net_card.pack(fill="x", pady=(0, 10))
         
         net_grid = ttk.Frame(net_card, style="Card.TFrame")
         net_grid.pack(fill="x")
         
-        # Interface - use white color for visibility
+        # Interface
         ttk.Label(net_grid, text="Interface:", style="Card.TLabel", foreground="#ffffff").grid(row=0, column=0, sticky="w", pady=4)
         iface_frame = ttk.Frame(net_grid, style="Card.TFrame")
         iface_frame.grid(row=0, column=1, sticky="w", pady=4, padx=(8, 0))
@@ -318,62 +322,40 @@ class AttackRunnerGUI:
         self.target_ip.grid(row=1, column=1, sticky="w", pady=4, padx=(8, 0))
         self.target_ip.insert(0, "26.0.0.0")
         
-        # Duration
-        ttk.Label(net_grid, text="Duration (s):", style="Card.TLabel").grid(row=2, column=0, sticky="w", pady=4)
-        self.duration_var = tk.StringVar(value=str(self.config.get('capture_duration', 180)))
-        self.duration_entry = ttk.Entry(net_grid, width=12, textvariable=self.duration_var, font=("Consolas", 10))
-        self.duration_entry.grid(row=2, column=1, sticky="w", pady=4, padx=(8, 0))
-        self.duration_var.trace('w', lambda *args: self.update_time_estimate())
-        
         # Target MAC
-        ttk.Label(net_grid, text="Target MAC:", style="Card.TLabel").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Label(net_grid, text="Target MAC:", style="Card.TLabel").grid(row=2, column=0, sticky="w", pady=4)
         mac_frame = ttk.Frame(net_grid, style="Card.TFrame")
-        mac_frame.grid(row=3, column=1, sticky="w", pady=4, padx=(8, 0))
+        mac_frame.grid(row=2, column=1, sticky="w", pady=4, padx=(8, 0))
         self.target_mac = ttk.Entry(mac_frame, width=18, font=("Consolas", 10))
         self.target_mac.pack(side="left")
         self.target_mac.insert(0, "ff:ff:ff:ff:ff:ff")
         ttk.Label(mac_frame, text="(ARP spoof)", style="Muted.TLabel").pack(side="left", padx=(6, 0))
         
-        # Attack Selection Card
-        attack_card = ttk.LabelFrame(left, text="🎯 Attack Variations (Click to toggle)", style="Card.TLabelframe", padding=12)
-        attack_card.pack(fill="both", expand=True, pady=(0, 10))
+        # Notebook for Presets vs Manual
+        self.notebook = ttk.Notebook(left)
+        self.notebook.pack(fill="both", expand=True, pady=(0, 10))
         
-        tree_frame = ttk.Frame(attack_card, style="Card.TFrame")
-        tree_frame.pack(fill="both", expand=True)
+        self.tab_presets = ttk.Frame(self.notebook, style="Card.TFrame")
+        self.tab_manual = ttk.Frame(self.notebook, style="Card.TFrame")
         
-        self.tree = CheckboxTreeview(tree_frame, columns=('description', 'params'), 
-                                      show='tree headings', selectmode='none')
-        self.tree.heading('#0', text='Attack / Variation')
-        self.tree.heading('description', text='Description')
-        self.tree.heading('params', text='Parameters')
-        self.tree.column('#0', width=180)
-        self.tree.column('description', width=150)
-        self.tree.column('params', width=200)
+        self.notebook.add(self.tab_presets, text="📂 Presets")
+        self.notebook.add(self.tab_manual, text="⚙️ Manual Mode")
         
-        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # --- PRESETS TAB ---
+        self.setup_presets_tab()
         
-        self.tree.bind('<<CheckChanged>>', lambda e: self.update_time_estimate())
-        
-        # Tree control buttons
-        btn_row = ttk.Frame(attack_card, style="Card.TFrame")
-        btn_row.pack(fill=tk.X, pady=(10, 0))
-        ttk.Button(btn_row, text="✓ Select All", command=self.tree.check_all, style="Small.TButton", width=10).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_row, text="✗ Select None", command=self.tree.uncheck_all, style="Small.TButton", width=11).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_row, text="▼ Expand All", command=self.expand_all, style="Small.TButton", width=11).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_row, text="▲ Collapse All", command=self.collapse_all, style="Small.TButton", width=11).pack(side=tk.LEFT, padx=4)
+        # --- MANUAL TAB ---
+        self.setup_manual_tab()
         
         # RIGHT COLUMN - Status & Log
         right = ttk.Frame(content)
         right.pack(side="right", fill="both", expand=True, padx=(8, 0))
         
         # Time Estimate Card
-        time_card = ttk.LabelFrame(right, text="⏱ Time Estimate", style="Card.TLabelframe", padding=12)
-        time_card.pack(fill="x", pady=(0, 10))
+        self.time_card = ttk.LabelFrame(right, text="⏱ Time Estimate (Presets)", style="Card.TLabelframe", padding=12)
+        self.time_card.pack(fill="x", pady=(0, 10))
         
-        time_inner = ttk.Frame(time_card, style="Card.TFrame")
+        time_inner = ttk.Frame(self.time_card, style="Card.TFrame")
         time_inner.pack(fill="x")
         
         self.time_label = ttk.Label(time_inner, text="Selected: 0 variations", style="Card.TLabel", font=("Segoe UI", 11))
@@ -401,15 +383,8 @@ class AttackRunnerGUI:
         log_card.pack(fill="both", expand=True)
         
         self.log_text = scrolledtext.ScrolledText(
-            log_card, 
-            width=40, 
-            height=15, 
-            state=tk.DISABLED, 
-            wrap=tk.WORD,
-            background=BG_COLOR, 
-            foreground=TEXT_COLOR,
-            font=("Consolas", 9),
-            insertbackground=TEXT_COLOR
+            log_card, width=40, height=15, state=tk.DISABLED, wrap=tk.WORD,
+            background=BG_COLOR, foreground=TEXT_COLOR, font=("Consolas", 9), insertbackground=TEXT_COLOR
         )
         self.log_text.pack(fill="both", expand=True)
         
@@ -424,50 +399,196 @@ class AttackRunnerGUI:
         # ==========================================
         footer = ttk.Frame(self.root, padding=(16, 10))
         footer.pack(fill="x")
-        
         ttk.Label(footer, text="⚠️ Use only in isolated lab environments", foreground=WARNING_COLOR).pack(side="left")
-        
-        # Clear log button
         ttk.Button(footer, text="🗑", command=self.clear_log, width=3, style="Small.TButton").pack(side="right", padx=4)
         
-        # Initial log messages
         self.log("⚔️ Attack Runner loaded", "success")
         self.log("⚠️ Run as Administrator for best results", "warning")
-    
+
+    def setup_presets_tab(self):
+        """Setup the presets treeview tab"""
+        # Duration for presets (Global Override)
+        dur_frame = ttk.Frame(self.tab_presets, style="Card.TFrame", padding=(10, 5))
+        dur_frame.pack(fill="x")
+        ttk.Label(dur_frame, text="Global Override Duration (s):", style="Card.TLabel").pack(side="left")
+        
+        self.duration_var = tk.StringVar(value=str(self.config.get('capture_duration', 180)))
+        self.duration_entry = ttk.Entry(dur_frame, width=10, textvariable=self.duration_var, font=("Consolas", 10))
+        self.duration_entry.pack(side="left", padx=5)
+        self.duration_var.trace('w', lambda *args: self.update_time_estimate())
+        
+        # Buttons Frame (Placed at top for visibility)
+        btn_row = ttk.Frame(self.tab_presets, style="Card.TFrame", padding=(10, 5))
+        btn_row.pack(fill=tk.X)
+        
+        # Treeview Frame
+        tree_frame = ttk.Frame(self.tab_presets, style="Card.TFrame", padding=10)
+        tree_frame.pack(fill="both", expand=True)
+        
+        self.tree = CheckboxTreeview(tree_frame, columns=('description', 'params'), 
+                                      show='tree headings', selectmode='none')
+        self.tree.heading('#0', text='Attack / Variation')
+        self.tree.heading('description', text='Description')
+        self.tree.heading('params', text='Parameters')
+        self.tree.column('#0', width=180)
+        self.tree.column('description', width=150)
+        self.tree.column('params', width=200)
+        
+        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.tree.bind('<<CheckChanged>>', lambda e: self.update_time_estimate())
+        
+        # Now add buttons interacting with self.tree
+        ttk.Button(btn_row, text="✓ Select All", command=self.tree.check_all, style="Small.TButton", width=10).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="✗ Select None", command=self.tree.uncheck_all, style="Small.TButton", width=11).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="▼ Expand All", command=self.expand_all, style="Small.TButton", width=11).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="▲ Collapse All", command=self.collapse_all, style="Small.TButton", width=11).pack(side=tk.LEFT, padx=4)
+
+    def setup_manual_tab(self):
+        """Setup the manual configuration tab"""
+        frame = ttk.Frame(self.tab_manual, style="Card.TFrame", padding=20)
+        frame.pack(fill="both", expand=True)
+        
+        # Attack Type Selection
+        ttk.Label(frame, text="Attack Type:", style="Card.TLabel").grid(row=0, column=0, sticky="w", pady=10)
+        
+        attack_types = [
+            "syn_flood", "udp_flood", "icmp_flood", 
+            "port_scan", "dns_tunnel", "arp_spoof",
+            "ssh_brute_force", "slowloris", 
+            "dhcp_starvation", "tcp_rst", "icmp_redirect",
+            "cam_overflow", "smurf", "land"
+        ]
+        
+        self.manual_type_var = tk.StringVar()
+        self.manual_type_combo = ttk.Combobox(frame, textvariable=self.manual_type_var, values=attack_types, state="readonly", width=30)
+        self.manual_type_combo.grid(row=0, column=1, sticky="w", pady=10, padx=10)
+        self.manual_type_combo.current(0)
+        self.manual_type_combo.bind("<<ComboboxSelected>>", self.update_manual_fields)
+        
+        # Dynamic Fields Container
+        self.manual_fields_frame = ttk.Frame(frame, style="Card.TFrame")
+        self.manual_fields_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=10)
+        
+    def update_manual_fields(self, event=None):
+        """Update manual fields based on selected attack type"""
+        # Clear existing fields
+        for widget in self.manual_fields_frame.winfo_children():
+            widget.destroy()
+        
+        self.manual_widgets.clear()
+        attack_type = self.manual_type_var.get()
+        
+        # Common Rows Helper
+        row = 0
+        def add_field(label, default, key):
+            ttk.Label(self.manual_fields_frame, text=label, style="Card.TLabel").grid(row=row, column=0, sticky="w", pady=5)
+            entry = ttk.Entry(self.manual_fields_frame, width=25)
+            entry.insert(0, str(default))
+            entry.grid(row=row, column=1, sticky="w", pady=5, padx=10)
+            self.manual_widgets[key] = entry
+        
+        # Common fields for almost all attacks
+        add_field("Duration (s):", "30", "duration")
+        row += 1
+        
+        if attack_type in ["syn_flood", "udp_flood", "icmp_flood", "tcp_rst", "land", "slowloris", "ssh_brute_force", "dns_tunnel", "cam_overflow", "smurf", "dhcp_starvation", "icmp_redirect", "arp_spoof"]:
+             if attack_type not in ["cam_overflow", "dhcp_starvation", "smurf", "icmp_redirect", "arp_spoof"]:
+                 add_field("Target Port:", "80", "port")
+                 row += 1
+        
+        if attack_type in ["syn_flood", "udp_flood", "icmp_flood", "tcp_rst", "cam_overflow", "smurf", "dhcp_starvation", "arp_spoof", "icmp_redirect", "land"]:
+            add_field("Intensity (packets/loop):", "10", "intensity")
+            row += 1
+            add_field("Delay (s):", "0.01", "delay")
+            row += 1
+        
+        # Specific fields
+        if attack_type == "port_scan":
+            add_field("Ports (range/list):", "1-1024", "ports")
+            row += 1
+            add_field("Delay (s):", "0.1", "delay")
+            row += 1
+            
+        elif attack_type == "dns_tunnel":
+            add_field("DNS Server:", "8.8.8.8", "dns_server")
+            row += 1
+            add_field("Queries/sec (QPS):", "5", "qps")
+            row += 1
+            
+        elif attack_type == "slowloris":
+            add_field("Connections:", "100", "connections")
+            row += 1
+            
+        elif attack_type == "icmp_redirect":
+            add_field("Gateway IP (Fake):", "10.0.0.1", "gateway_ip")
+            row += 1
+            
+        elif attack_type == "smurf":
+            add_field("Broadcast IP:", "192.168.1.255", "broadcast_ip")
+            row += 1
+            
+        elif attack_type == "arp_spoof":
+            add_field("Gateway IP (Real):", "192.168.1.1", "gateway_ip")
+            row += 1
+            
+        elif attack_type == "ssh_brute_force":
+             add_field("Users (comma sep):", "admin,root", "users")
+             row += 1
+             add_field("Passwords (comma sep):", "password,123456", "passwords")
+             row += 1
+             add_field("Delay (s):", "0.5", "delay")
+             row += 1
+
+    def get_manual_variation(self):
+        """Construct variation dict from manual widgets"""
+        var = {}
+        for key, widget in self.manual_widgets.items():
+            val = widget.get().strip()
+            # Convert numbers
+            try:
+                if '.' in val:
+                    val = float(val)
+                else:
+                    val = int(val)
+            except:
+                pass # keep as string
+            
+            # Convert lists
+            if key in ['users', 'passwords']:
+                val = [x.strip() for x in str(val).split(',')]
+            
+            var[key] = val
+        
+        # Add description
+        var['description'] = "Manual Config"
+        return var
+
+    # ... [Keep existing helper methods like load_interfaces, log, clear_log, etc.] ...
+    # I will replicate populate_attacks, expand_all, collapse_all, etc.
+
     def clear_log(self):
-        """Clear the activity log"""
         self.log_text.configure(state=tk.NORMAL)
         self.log_text.delete("1.0", tk.END)
         self.log_text.configure(state=tk.DISABLED)
     
     def populate_attacks(self):
-        """Populate treeview with attacks and variations"""
         self.tree.delete(*self.tree.get_children())
         self.variation_map.clear()
-        
         for attack_type, attack_cfg in self.config.get('attacks', {}).items():
             variations = attack_cfg.get('variations', [])
-            
-            parent = self.tree.insert('', 'end', text=f'📁 {attack_type}', 
-                                       values=(f'{len(variations)} variations', ''),
-                                       open=True, tags=('parent',))
-            
+            parent = self.tree.insert('', 'end', text=f'📁 {attack_type}', values=(f'{len(variations)} variations', ''), open=True, tags=('parent',))
             for i, var in enumerate(variations):
                 desc = var.get('description', f'Variation {i+1}')
-                
-                params = []
-                for k, v in var.items():
-                    if k != 'description':
-                        params.append(f"{k}={v}")
+                params = [f"{k}={v}" for k, v in var.items() if k != 'description']
                 params_str = ', '.join(params[:4])
-                
-                item_id = self.tree.insert(parent, 'end', text=f'☐ {desc}',
-                                           values=(desc, params_str),
-                                           tags=('variation',))
+                item_id = self.tree.insert(parent, 'end', text=f'☐ {desc}', values=(desc, params_str), tags=('variation',))
                 self.variation_map[item_id] = (attack_type, i, var)
     
     def get_selected_variations(self):
-        """Get list of selected variations"""
         selected = []
         for item_id in self.tree.get_checked_items():
             if item_id in self.variation_map:
@@ -475,197 +596,146 @@ class AttackRunnerGUI:
         return selected
     
     def update_time_estimate(self):
-        try:
-            global_duration = int(self.duration_var.get())
-        except:
-            global_duration = 180
-        
+        try: global_duration = int(self.duration_var.get())
+        except: global_duration = 180
         cooldown = self.config.get('cooldown_period', 10)
         selected = self.get_selected_variations()
         count = len(selected)
-        
-        if count == 0:
-            total_seconds = 0
+        if count == 0: total_seconds = 0
         else:
-            # Sum up per-variation durations (fallback to global if not set)
-            total_seconds = sum(
-                var[2].get('duration', global_duration) for var in selected
-            )
-            # Add cooldowns between variations
+            total_seconds = sum(var[2].get('duration', global_duration) for var in selected)
             total_seconds += (count - 1) * cooldown
-        
         minutes = total_seconds // 60
         seconds = total_seconds % 60
-        
         self.time_label.config(text=f"Selected: {count} variations")
         self.estimate_label.config(text=f"≈ {minutes} min {seconds} sec")
     
     def expand_all(self):
-        for item in self.tree.get_children():
-            self.tree.item(item, open=True)
-    
+        for item in self.tree.get_children(): self.tree.item(item, open=True)
     def collapse_all(self):
-        for item in self.tree.get_children():
-            self.tree.item(item, open=False)
+        for item in self.tree.get_children(): self.tree.item(item, open=False)
     
     def load_interfaces(self):
-        """Load network interfaces using Scapy's IFACES (works without psutil)"""
         try:
             from scapy.all import IFACES
-            
             self.interfaces = []
-            
-            # Use Scapy's IFACES - it has all the info we need on Windows
             for raw_name, iface in IFACES.items():
                 try:
-                    # Skip interfaces without IP or with 0.0.0.0
-                    if not hasattr(iface, 'ip') or not iface.ip or iface.ip == '0.0.0.0':
-                        continue
-                    
-                    ip = iface.ip
-                    friendly_name = getattr(iface, 'name', raw_name) or raw_name
-                    
-                    display = f"{friendly_name} ({ip})"
-                    self.interfaces.append({
-                        'raw': raw_name,  # The NPF device path for scapy
-                        'display': display,
-                        'ip': ip,
-                        'friendly': friendly_name
-                    })
-                except Exception as e:
-                    print(f"Error processing interface {raw_name}: {e}")
-                    continue
-            
-            # Sort interfaces, putting common ones first (Radmin VPN, Ethernet, WiFi)
-            def sort_key(iface):
-                name_lower = iface['friendly'].lower() if iface.get('friendly') else ''
-                if 'radmin' in name_lower:
-                    return (0, name_lower)
-                elif 'ethernet' in name_lower or 'eth' in name_lower:
-                    return (1, name_lower)
-                elif 'wi-fi' in name_lower or 'wifi' in name_lower or 'wlan' in name_lower:
-                    return (2, name_lower)
-                elif 'loopback' in name_lower:
-                    return (9, name_lower)  # Put loopback last
-                else:
-                    return (3, name_lower)
-            
-            self.interfaces.sort(key=sort_key)
-            
+                    if not hasattr(iface, 'ip') or not iface.ip or iface.ip == '0.0.0.0': continue
+                    display = f"{getattr(iface, 'name', raw_name) or raw_name} ({iface.ip})"
+                    self.interfaces.append({'raw': raw_name, 'display': display, 'ip': iface.ip, 'friendly': display})
+                except: continue
             self.interface_combo['values'] = [i['display'] for i in self.interfaces]
-            if self.interfaces:
-                self.interface_combo.current(0)
-                
-            # Log found interfaces for debugging
-            print(f"Found {len(self.interfaces)} interfaces:")
-            for iface in self.interfaces:
-                print(f"  - {iface['display']} -> {iface['raw']}")
-                
+            if self.interfaces: self.interface_combo.current(0)
         except Exception as e:
             print(f"Error loading interfaces: {e}")
-            import traceback
-            traceback.print_exc()
             self.interface_combo['values'] = ['Default Interface']
             self.interface_combo.current(0)
-    
+            
     def log(self, message, level="info"):
         self.log_text.configure(state=tk.NORMAL)
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n", level)
         self.log_text.see(tk.END)
         self.log_text.configure(state=tk.DISABLED)
-    
+
     def validate_inputs(self):
         ip = self.target_ip.get().strip()
         try:
             parts = ip.split('.')
-            if len(parts) != 4 or not all(0 <= int(p) <= 255 for p in parts):
-                raise ValueError
+            if len(parts) != 4 or not all(0 <= int(p) <= 255 for p in parts): raise ValueError
         except:
             messagebox.showerror("Error", "Invalid Target IP")
             return False
-        
-        if not self.get_selected_variations():
-            messagebox.showerror("Error", "Select at least one variation")
-            return False
+            
+        current_tab = self.notebook.index(self.notebook.select())
+        if current_tab == 0: # Presets
+            if not self.get_selected_variations():
+                messagebox.showerror("Error", "Select at least one variation (or switch to Manual Mode)")
+                return False
         return True
-    
+
     def start_attacks(self):
-        if not self.validate_inputs():
-            return
+        if not self.validate_inputs(): return
         
-        selected = self.get_selected_variations()
         idx = self.interface_combo.current()
         iface = self.interfaces[idx]['raw'] if idx >= 0 and idx < len(self.interfaces) else None
         target = self.target_ip.get().strip()
         
-        try:
-            duration = int(self.duration_var.get())
-        except:
-            duration = 180
+        current_tab = self.notebook.index(self.notebook.select())
+        
+        if current_tab == 0: # Presets
+            selected = self.get_selected_variations()
+            try: duration = int(self.duration_var.get())
+            except: duration = 180
+        else: # Manual
+            attack_type = self.manual_type_var.get()
+            var = self.get_manual_variation()
+            selected = [(attack_type, 0, var)]
+            duration = var.get('duration', 30)
         
         self.log(f"🚀 Launching {len(selected)} attacks on {target}", "success")
-        
         self.is_running = True
         self.status_label.config(text="🔴 ATTACKING", foreground=ERROR_COLOR)
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         
-        # Get target MAC for ARP spoof
         target_mac = self.target_mac.get().strip() or "ff:ff:ff:ff:ff:ff"
         
-        threading.Thread(target=self.run_attacks, 
-                        args=(target, iface, selected, duration, target_mac), 
-                        daemon=True).start()
-    
+        threading.Thread(target=self.run_attacks, args=(target, iface, selected, duration, target_mac), daemon=True).start()
+
     def run_attacks(self, target, iface, selected_variations, duration, target_mac="ff:ff:ff:ff:ff:ff"):
         try:
             import attack_core
             from scapy.all import conf
-            
-            if iface:
-                conf.iface = iface
+            if iface: conf.iface = iface
             
             cooldown = self.config.get('cooldown_period', 10)
             total = len(selected_variations)
             
             for i, (attack_type, var_idx, variation) in enumerate(selected_variations):
-                if not self.is_running:
-                    break
+                if not self.is_running: break
                 
-                desc = variation.get('description', f'var{var_idx+1}')
+                desc = variation.get('description', f'manual')
                 label = f"{attack_type}"
-                
-                # Use per-variation duration if specified, else use global duration
                 var_duration = variation.get('duration', duration)
                 
-                self.root.after(0, lambda l=f"{attack_type}: {desc} ({var_duration}s)": self.log(f"⚡ Running: {l}", "warning"))
+                self.root.after(0, lambda l=f"{attack_type}: {desc}": self.log(f"⚡ Running: {l}", "warning"))
                 self.root.after(0, lambda l=f"{attack_type}: {desc}": self.progress_label.config(text=l))
                 
                 try:
-                    attack_funcs = {
-                        'syn_flood': lambda: attack_core.syn_flood_impl(target, variation.get('port', 80),
-                            variation.get('intensity', 10), variation.get('delay', 0.01), var_duration, label),
-                        'udp_flood': lambda: attack_core.udp_flood_impl(target, variation.get('port', 53),
-                            variation.get('size', 512), variation.get('delay', 0.001), var_duration, label),
-                        'icmp_flood': lambda: attack_core.icmp_flood_impl(target,
-                            variation.get('intensity', 50), variation.get('delay', 0.01), var_duration, label),
-                        'port_scan': lambda: attack_core.port_scan_impl(target, variation.get('ports', '1-1024'),
-                            variation.get('delay', 0.1), var_duration, label),
-                        'dns_tunnel': lambda: attack_core.dns_tunnel_impl(target, variation.get('dns_server', '8.8.8.8'),
-                            variation.get('qps', 5), var_duration, label, variation.get('mirror_to')),
-                        'arp_spoof': lambda: attack_core.arp_spoof_impl(target, variation.get('fake_mac', 'aa:bb:cc:dd:ee:ff'),
-                            variation.get('intensity', 1), var_duration, label, target_mac,
-                            variation.get('fake_mac2'), variation.get('mac_switch_delay', 0)),
-                        'ssh_brute_force': lambda: attack_core.ssh_brute_force_impl(target, variation.get('port', 22),
-                            variation.get('users', ['admin']), variation.get('passwords', ['password']),
-                            variation.get('delay', 0.5), var_duration, label),
-                        'slowloris': lambda: attack_core.slowloris_impl(target, variation.get('port', 80),
-                            variation.get('connections', 100), var_duration, label)
-                    }
+                    # Generic getter with default fallback
+                    def val(key, default): return variation.get(key, default)
                     
-                    if attack_type in attack_funcs:
-                        attack_funcs[attack_type]()
+                    if attack_type == 'syn_flood':
+                        attack_core.syn_flood_impl(target, val('port', 80), val('intensity', 10), val('delay', 0.01), var_duration, label)
+                    elif attack_type == 'udp_flood':
+                        attack_core.udp_flood_impl(target, val('port', 53), val('intensity', 10), val('delay', 0.01), var_duration, label)
+                    elif attack_type == 'icmp_flood':
+                        attack_core.icmp_flood_impl(target, val('intensity', 10), val('delay', 0.01), var_duration, label)
+                    elif attack_type == 'port_scan':
+                        attack_core.port_scan_impl(target, val('ports', '1-1024'), val('delay', 0.1), var_duration, label)
+                    elif attack_type == 'dns_tunnel':
+                        attack_core.dns_tunnel_impl(target, val('dns_server', '8.8.8.8'), val('qps', 5), var_duration, label, val('mirror_to', None), val('mirror_mac', None), val('preserve_dst', False))
+                    elif attack_type == 'arp_spoof':
+                        attack_core.arp_spoof_impl(target, val('fake_mac', 'aa:bb:cc:dd:ee:ff'), val('intensity', 1), var_duration, label, target_mac, val('fake_mac2', None), val('mac_switch_delay', 0), val('gateway_ip', None))
+                    elif attack_type == 'ssh_brute_force':
+                        attack_core.ssh_brute_force_impl(target, val('port', 22), val('users', ['admin']), val('passwords', ['password']), val('delay', 0.5), var_duration, label)
+                    elif attack_type == 'slowloris':
+                        attack_core.slowloris_impl(target, val('port', 80), val('connections', 100), var_duration, label)
+                    # NEW ATTACKS
+                    elif attack_type == 'dhcp_starvation':
+                        attack_core.dhcp_starvation_impl(target, val('intensity', 10), val('delay', 0.01), var_duration, label)
+                    elif attack_type == 'tcp_rst':
+                        attack_core.tcp_rst_impl(target, val('port', 80), val('intensity', 10), val('delay', 0.01), var_duration, label)
+                    elif attack_type == 'icmp_redirect':
+                        attack_core.icmp_redirect_impl(target, val('gateway_ip', '10.0.0.1'), val('intensity', 10), val('delay', 0.01), var_duration, label)
+                    elif attack_type == 'cam_overflow':
+                        attack_core.cam_overflow_impl(target, val('intensity', 10), val('delay', 0.01), var_duration, label)
+                    elif attack_type == 'smurf':
+                        attack_core.smurf_impl(target, val('broadcast_ip', '192.168.1.255'), val('intensity', 10), val('delay', 0.01), var_duration, label)
+                    elif attack_type == 'land':
+                        attack_core.land_impl(target, val('port', 80), val('intensity', 10), val('delay', 0.01), var_duration, label)
                     
                     self.root.after(0, lambda: self.log(f"✓ Completed", "success"))
                 except Exception as e:
@@ -673,44 +743,40 @@ class AttackRunnerGUI:
                 
                 progress = int(((i + 1) / total) * 100)
                 self.root.after(0, lambda p=progress: self.progress.configure(value=p))
-                
-                if i < total - 1 and self.is_running:
+                if i < total - 1 and self.is_running and current_tab == 0: # Only sleep cooldown in presets
                     time.sleep(cooldown)
             
             self.root.after(0, self.attacks_completed)
         except Exception as e:
             self.root.after(0, lambda: self.log(f"FATAL: {e}", "error"))
             self.root.after(0, self.attacks_completed)
-    
+
     def attacks_completed(self):
         self.is_running = False
         self.status_label.config(text="✓ Completed", foreground=SUCCESS_COLOR)
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
-        self.progress_label.config(text="All attacks completed!")
+        self.progress_label.config(text="Done")
         self.log("🏁 All attacks completed!", "success")
-    
+
     def stop_attacks(self):
         self.is_running = False
         try:
             import attack_core
             attack_core.stop_event.set()
-        except:
-            pass
+        except: pass
         self.status_label.config(text="⏹ Stopped", foreground=WARNING_COLOR)
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.log("🛑 Stopped by user", "warning")
-    
+
     def on_closing(self):
         if self.is_running:
             if messagebox.askokcancel("Quit", "Attacks running. Stop and quit?"):
                 self.stop_attacks()
                 time.sleep(0.5)
                 self.root.destroy()
-        else:
-            self.root.destroy()
-
+        else: self.root.destroy()
 
 def main():
     if os.name == 'nt':
@@ -718,12 +784,10 @@ def main():
         if not ctypes.windll.shell32.IsUserAnAdmin():
             messagebox.showerror("Error", "Administrator privileges required!")
             sys.exit(1)
-    
     root = tk.Tk()
     app = AttackRunnerGUI(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
-
 
 if __name__ == '__main__':
     main()

@@ -584,6 +584,15 @@
                                 class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-sm font-medium">
                                 🚀 Auto Setup (ngrok + Webhook)
                             </button>
+                            <div class="border-t border-gray-600 pt-2 mt-2">
+                                <p class="text-xs text-gray-400 mb-1">Or set webhook manually:</p>
+                                <input type="text" id="webhookUrl" placeholder="https://your-ngrok-url.io"
+                                    class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2">
+                                <button onclick="setTelegramWebhook()"
+                                    class="w-full bg-gray-600 hover:bg-gray-700 text-white py-2 rounded text-sm font-medium">
+                                    🔗 Set Webhook Manually
+                                </button>
+                            </div>
                             <div id="webhook-status" class="text-xs mt-2"></div>
                         </div>
                     </div>

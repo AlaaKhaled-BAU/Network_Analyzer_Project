@@ -11,8 +11,36 @@
                     "port": 80,
                     "intensity": 10,
                     "delay": 0.01,
+                    "description": "HTTP - Low intensity - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "port": 80,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Windows 10 Botnet Flood (Real WinSize)",
+                    "duration": 30
+                },
+                {
+                    "port": 443,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "HTTPS - Low intensity - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.01,
                     "description": "HTTP - Low intensity",
                     "duration": 5
+                },
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.015,
+                    "description": "HTTP - Low intensity - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "port": 80,
@@ -23,10 +51,24 @@
                 },
                 {
                     "port": 80,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "HTTP - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 80,
                     "intensity": 100,
                     "delay": 0.001,
                     "description": "HTTP - High intensity",
                     "duration": 180
+                },
+                {
+                    "port": 80,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "HTTP - High intensity - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "port": 443,
@@ -37,6 +79,13 @@
                 },
                 {
                     "port": 443,
+                    "intensity": 10,
+                    "delay": 0.015,
+                    "description": "HTTPS - Low intensity - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 443,
                     "intensity": 50,
                     "delay": 0.005,
                     "description": "HTTPS - Medium intensity",
@@ -44,10 +93,45 @@
                 },
                 {
                     "port": 443,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "HTTPS - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 443,
                     "intensity": 100,
                     "delay": 0.001,
                     "description": "HTTPS - High intensity",
                     "duration": 180
+                },
+                {
+                    "port": 443,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "HTTPS - High intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 443,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "HTTPS - High intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 80,
+                    "intensity": 200,
+                    "delay": 0.0005,
+                    "description": "HTTP - Very High intensity",
+                    "duration": 180
+                },
+                {
+                    "port": 80,
+                    "intensity": 200,
+                    "delay": 0.0005,
+                    "description": "HTTP - Very High intensity - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "port": 22,
@@ -58,10 +142,31 @@
                 },
                 {
                     "port": 22,
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "SSH - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 22,
+                    "intensity": 20,
+                    "delay": 0.015,
+                    "description": "SSH - Medium intensity - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
                     "intensity": 100,
                     "delay": 0.001,
                     "description": "SSH - High intensity",
                     "duration": 180
+                },
+                {
+                    "port": 22,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "SSH - High intensity - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "port": 8080,
@@ -72,10 +177,24 @@
                 },
                 {
                     "port": 8080,
+                    "intensity": 30,
+                    "delay": 0.005,
+                    "description": "Alt HTTP - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 8080,
                     "intensity": 100,
                     "delay": 0.001,
                     "description": "Alt HTTP - High intensity",
                     "duration": 180
+                },
+                {
+                    "port": 8080,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "Alt HTTP - High intensity - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "port": 3389,
@@ -85,23 +204,65 @@
                     "duration": 30
                 },
                 {
+                    "port": 3389,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "RDP - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
                     "port": 3306,
                     "intensity": 50,
                     "delay": 0.005,
                     "description": "MySQL - Medium intensity",
                     "duration": 30
+                },
+                {
+                    "port": 3306,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "MySQL - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
                 }
             ]
         },
         "udp_flood": {
-            "enabled": false,
+            "enabled": true,
             "variations": [
+                {
+                    "port": 27015,
+                    "intensity": 50,
+                    "delay": 0.001,
+                    "description": "Valve Source Engine Flood (Real Payload)",
+                    "duration": 30
+                },
+                {
+                    "port": 123,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "NTP - Low intensity - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "port": 161,
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "SNMP - Medium intensity - 2s Burst",
+                    "duration": 2
+                },
                 {
                     "port": 53,
                     "intensity": 10,
                     "delay": 0.01,
                     "description": "DNS - Low intensity",
                     "duration": 5
+                },
+                {
+                    "port": 53,
+                    "intensity": 10,
+                    "delay": 0.015,
+                    "description": "DNS - Low intensity - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "port": 53,
@@ -112,10 +273,24 @@
                 },
                 {
                     "port": 53,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "DNS - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 53,
                     "intensity": 100,
                     "delay": 0.001,
                     "description": "DNS - High intensity",
                     "duration": 180
+                },
+                {
+                    "port": 53,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "DNS - High intensity - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "port": 123,
@@ -126,10 +301,24 @@
                 },
                 {
                     "port": 123,
+                    "intensity": 10,
+                    "delay": 0.015,
+                    "description": "NTP - Low intensity - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 123,
                     "intensity": 50,
                     "delay": 0.005,
                     "description": "NTP - Medium intensity",
                     "duration": 30
+                },
+                {
+                    "port": 123,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "NTP - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "port": 123,
@@ -139,18 +328,39 @@
                     "duration": 180
                 },
                 {
+                    "port": 123,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "NTP - High intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
                     "port": 161,
                     "intensity": 20,
                     "delay": 0.01,
-                    "description": "SNMP - Low intensity",
+                    "description": "SNMP - Medium intensity",
                     "duration": 5
+                },
+                {
+                    "port": 161,
+                    "intensity": 20,
+                    "delay": 0.015,
+                    "description": "SNMP - Medium intensity - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "port": 161,
                     "intensity": 50,
                     "delay": 0.005,
-                    "description": "SNMP - Medium intensity",
+                    "description": "SNMP - Medium-High intensity",
                     "duration": 30
+                },
+                {
+                    "port": 161,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "SNMP - Medium-High intensity - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "port": 1900,
@@ -161,10 +371,31 @@
                 },
                 {
                     "port": 1900,
+                    "intensity": 30,
+                    "delay": 0.005,
+                    "description": "SSDP - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 1900,
+                    "intensity": 30,
+                    "delay": 0.01,
+                    "description": "SSDP - Medium intensity - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 1900,
                     "intensity": 100,
                     "delay": 0.001,
                     "description": "SSDP - High intensity",
                     "duration": 180
+                },
+                {
+                    "port": 1900,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "SSDP - High intensity - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "port": 5060,
@@ -174,11 +405,39 @@
                     "duration": 30
                 },
                 {
+                    "port": 5060,
+                    "intensity": 30,
+                    "delay": 0.005,
+                    "description": "SIP - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 5060,
+                    "intensity": 30,
+                    "delay": 0.01,
+                    "description": "SIP - Medium intensity - Stealth (180s)",
+                    "duration": 180
+                },
+                {
                     "port": 27015,
                     "intensity": 50,
                     "delay": 0.005,
                     "description": "Gaming - Medium intensity",
                     "duration": 30
+                },
+                {
+                    "port": 27015,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Gaming - Medium intensity - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 27015,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "Gaming - High intensity",
+                    "duration": 180
                 }
             ]
         },
@@ -188,8 +447,26 @@
                 {
                     "intensity": 10,
                     "delay": 0.01,
+                    "description": "Low intensity - 10 pps - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "intensity": 20,
+                    "delay": 0.005,
+                    "description": "Low-Medium intensity - 20 pps - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "intensity": 10,
+                    "delay": 0.01,
                     "description": "Low intensity - 10 pps",
                     "duration": 5
+                },
+                {
+                    "intensity": 10,
+                    "delay": 0.015,
+                    "description": "Low intensity - 10 pps - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "intensity": 20,
@@ -198,10 +475,22 @@
                     "duration": 5
                 },
                 {
+                    "intensity": 20,
+                    "delay": 0.0075,
+                    "description": "Low-Medium intensity - 20 pps - Stealth (180s)",
+                    "duration": 180
+                },
+                {
                     "intensity": 50,
                     "delay": 0.005,
                     "description": "Medium intensity - 50 pps",
                     "duration": 30
+                },
+                {
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Medium intensity - 50 pps - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "intensity": 75,
@@ -210,10 +499,22 @@
                     "duration": 30
                 },
                 {
+                    "intensity": 75,
+                    "delay": 0.002,
+                    "description": "Medium-High intensity - 75 pps - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
                     "intensity": 100,
                     "delay": 0.001,
                     "description": "High intensity - 100 pps",
                     "duration": 180
+                },
+                {
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High intensity - 100 pps - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "intensity": 150,
@@ -222,10 +523,22 @@
                     "duration": 180
                 },
                 {
+                    "intensity": 150,
+                    "delay": 0.0005,
+                    "description": "Very High intensity - 150 pps - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
                     "intensity": 200,
                     "delay": 0.0005,
                     "description": "Extreme intensity - 200 pps",
                     "duration": 180
+                },
+                {
+                    "intensity": 200,
+                    "delay": 0.0005,
+                    "description": "Extreme intensity - 200 pps - Flash Burst (2s)",
+                    "duration": 2
                 }
             ]
         },
@@ -233,10 +546,40 @@
             "enabled": true,
             "variations": [
                 {
+                    "ports": "20-1024",
+                    "delay": 0.05,
+                    "description": "Nmap Stealth Scan (Jitter + Options)",
+                    "duration": 30
+                },
+                {
+                    "ports": "20-100",
+                    "delay": 0.01,
+                    "description": "Fast Scan - Top 100",
+                    "duration": 5
+                },
+                {
+                    "ports": "22,80,443",
+                    "delay": 0.5,
+                    "description": "Common 3 ports - Slow scan - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "ports": "20,21,22,23,25,53,80,110,143,443",
+                    "delay": 0.5,
+                    "description": "Top 10 ports - Slow scan - 2s Burst",
+                    "duration": 2
+                },
+                {
                     "ports": "22,80,443",
                     "delay": 0.5,
                     "description": "Common 3 ports - Slow scan",
                     "duration": 5
+                },
+                {
+                    "ports": "22,80,443",
+                    "delay": 0.75,
+                    "description": "Common 3 ports - Slow scan - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "ports": "22,80,443",
@@ -252,9 +595,21 @@
                 },
                 {
                     "ports": "20,21,22,23,25,53,80,110,143,443",
+                    "delay": 0.75,
+                    "description": "Top 10 ports - Slow scan - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "ports": "20,21,22,23,25,53,80,110,143,443",
                     "delay": 0.2,
                     "description": "Top 10 ports - Medium scan",
                     "duration": 30
+                },
+                {
+                    "ports": "20,21,22,23,25,53,80,110,143,443",
+                    "delay": 0.3,
+                    "description": "Top 10 ports - Medium scan - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "ports": "20,21,22,23,25,53,80,110,143,443",
@@ -269,10 +624,34 @@
                     "duration": 30
                 },
                 {
+                    "ports": "80,443,8080,8443,3000,5000,8000,9090",
+                    "delay": 0.45,
+                    "description": "Web services - Medium scan - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "ports": "80,443,8080,8443,3000,5000,8000,9090",
+                    "delay": 0.05,
+                    "description": "Web services - Fast scan - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
                     "ports": "3306,5432,27017,6379,9200,1433,5984",
                     "delay": 0.3,
                     "description": "Database ports - Medium scan",
                     "duration": 30
+                },
+                {
+                    "ports": "3306,5432,27017,6379,9200,1433,5984",
+                    "delay": 0.45,
+                    "description": "Database ports - Medium scan - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "ports": "3306,5432,27017,6379,9200,1433,5984",
+                    "delay": 0.05,
+                    "description": "Database ports - Fast scan - Flash Burst (2s)",
+                    "duration": 2
                 },
                 {
                     "ports": "22,23,3389,5900,5901",
@@ -281,10 +660,28 @@
                     "duration": 30
                 },
                 {
+                    "ports": "22,23,3389,5900,5901",
+                    "delay": 0.45,
+                    "description": "Remote access - Medium scan - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "ports": "22,23,3389,5900,5901",
+                    "delay": 0.05,
+                    "description": "Remote access - Fast scan - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
                     "ports": "1-50",
                     "delay": 0.2,
                     "description": "Range 1-50 - Medium scan",
                     "duration": 30
+                },
+                {
+                    "ports": "1-50",
+                    "delay": 0.3,
+                    "description": "Range 1-50 - Medium scan - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "ports": "1-100",
@@ -318,6 +715,12 @@
                 },
                 {
                     "ports": "1-1024",
+                    "delay": 0.15,
+                    "description": "All privileged ports - Medium scan - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "ports": "1-1024",
                     "delay": 0.05,
                     "description": "All privileged ports - Fast scan",
                     "duration": 180
@@ -336,86 +739,200 @@
                 {
                     "dns_server": "8.26.56.26",
                     "qps": 1,
+                    "description": "Comodo DNS - Very slow (1 qps) - 2s Burst",
+                    "duration": 2,
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "8.26.56.26",
+                    "qps": 5,
+                    "description": "Comodo DNS - Slow (5 qps) - 2s Burst",
+                    "duration": 2,
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "8.8.8.8",
+                    "qps": 2,
+                    "description": "Google DNS - Slow (2 qps) - 2s Burst",
+                    "duration": 2,
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "1.1.1.1",
+                    "qps": 5,
+                    "description": "Cloudflare DNS - Slow (5 qps) - 2s Burst",
+                    "duration": 2,
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "8.26.56.26",
+                    "qps": 1,
                     "description": "Comodo DNS - Very slow (1 qps)",
                     "duration": 5,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "8.26.56.26",
+                    "qps": 1,
+                    "description": "Comodo DNS - Very slow (1 qps) - Stealth (180s)",
+                    "duration": 180,
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "8.26.56.26",
                     "qps": 5,
                     "description": "Comodo DNS - Slow (5 qps)",
                     "duration": 5,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "8.26.56.26",
+                    "qps": 5,
+                    "description": "Comodo DNS - Slow (5 qps) - Stealth (180s)",
+                    "duration": 180,
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "84.200.69.80",
                     "qps": 10,
                     "description": "DNS.Watch - Medium (10 qps)",
                     "duration": 30,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "84.200.69.80",
                     "qps": 20,
                     "description": "DNS.Watch - Fast (20 qps)",
                     "duration": 180,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "84.200.69.80",
+                    "qps": 20,
+                    "description": "DNS.Watch - Fast (20 qps) - Flash Burst (2s)",
+                    "duration": 2,
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "8.8.8.8",
                     "qps": 2,
                     "description": "Google DNS - Slow (2 qps)",
                     "duration": 5,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "8.8.8.8",
+                    "qps": 2,
+                    "description": "Google DNS - Slow (2 qps) - Stealth (180s)",
+                    "duration": 180,
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "8.8.8.8",
                     "qps": 10,
                     "description": "Google DNS - Medium (10 qps)",
                     "duration": 30,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "8.8.8.8",
                     "qps": 20,
                     "description": "Google DNS - Fast (20 qps)",
                     "duration": 180,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "8.8.8.8",
+                    "qps": 20,
+                    "description": "Google DNS - Fast (20 qps) - Flash Burst (2s)",
+                    "duration": 2,
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "1.1.1.1",
                     "qps": 5,
                     "description": "Cloudflare DNS - Slow (5 qps)",
                     "duration": 5,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "1.1.1.1",
+                    "qps": 5,
+                    "description": "Cloudflare DNS - Slow (5 qps) - Stealth (180s)",
+                    "duration": 180,
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "1.1.1.1",
                     "qps": 15,
                     "description": "Cloudflare DNS - Medium (15 qps)",
                     "duration": 30,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "1.1.1.1",
                     "qps": 30,
                     "description": "Cloudflare DNS - Fast (30 qps)",
                     "duration": 180,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "1.1.1.1",
+                    "qps": 30,
+                    "description": "Cloudflare DNS - Fast (30 qps) - Flash Burst (2s)",
+                    "duration": 2,
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "9.9.9.9",
                     "qps": 10,
                     "description": "Quad9 DNS - Medium (10 qps)",
                     "duration": 30,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "9.9.9.9",
+                    "qps": 5,
+                    "description": "Quad9 DNS - Slow (5 qps) - Stealth (180s)",
+                    "duration": 180,
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "9.9.9.9",
+                    "qps": 5,
+                    "description": "Quad9 DNS - Slow (5 qps) - Flash Burst (2s)",
+                    "duration": 2,
+                    "mirror_to": "192.168.1.200"
                 },
                 {
                     "dns_server": "208.67.222.222",
                     "qps": 15,
                     "description": "OpenDNS - Medium (15 qps)",
                     "duration": 30,
-                    "mirror_to": "26.178.118.134"
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "208.67.222.222",
+                    "qps": 20,
+                    "description": "OpenDNS - High (20 qps) - Stealth (180s)",
+                    "duration": 180,
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "208.67.222.222",
+                    "qps": 20,
+                    "description": "OpenDNS - High (20 qps) - Flash Burst (2s)",
+                    "duration": 2,
+                    "mirror_to": "192.168.1.200"
+                },
+                {
+                    "dns_server": "8.8.8.8",
+                    "qps": 10,
+                    "description": "Exfiltration simulation - Destination Spoofing",
+                    "duration": 30,
+                    "mirror_to": "192.168.1.200",
+                    "preserve_dst": true,
+                    "mirror_mac": "00:11:22:33:44:55"
                 }
             ]
         },
@@ -427,8 +944,32 @@
                     "fake_mac2": "11:22:33:44:55:66",
                     "intensity": 20,
                     "mac_switch_delay": 0,
+                    "duration": 2,
+                    "description": "2s Window - Rapid MAC flapping"
+                },
+                {
+                    "fake_mac": "aa:bb:cc:dd:ee:ff",
+                    "fake_mac2": "ff:ee:dd:cc:bb:aa",
+                    "intensity": 15,
+                    "mac_switch_delay": 0,
+                    "duration": 2,
+                    "description": "2s Window - High intensity flapping"
+                },
+                {
+                    "fake_mac": "aa:bb:cc:dd:ee:ff",
+                    "fake_mac2": "11:22:33:44:55:66",
+                    "intensity": 20,
+                    "mac_switch_delay": 0,
                     "duration": 5,
                     "description": "5s Window - Rapid MAC flapping"
+                },
+                {
+                    "fake_mac": "aa:bb:cc:dd:ee:ff",
+                    "fake_mac2": "11:22:33:44:55:66",
+                    "intensity": 20,
+                    "mac_switch_delay": 0,
+                    "duration": 180,
+                    "description": "5s Window - Rapid MAC flapping - Stealth (180s)"
                 },
                 {
                     "fake_mac": "aa:bb:cc:dd:ee:ff",
@@ -439,12 +980,28 @@
                     "description": "5s Window - High intensity flapping"
                 },
                 {
+                    "fake_mac": "aa:bb:cc:dd:ee:ff",
+                    "fake_mac2": "ff:ee:dd:cc:bb:aa",
+                    "intensity": 15,
+                    "mac_switch_delay": 0,
+                    "duration": 180,
+                    "description": "5s Window - High intensity flapping - Stealth (180s)"
+                },
+                {
                     "fake_mac": "de:ad:be:ef:00:01",
                     "fake_mac2": "de:ad:be:ef:00:02",
                     "intensity": 10,
                     "mac_switch_delay": 5,
                     "duration": 30,
                     "description": "30s Window - Switch every 5s"
+                },
+                {
+                    "fake_mac": "de:ad:be:ef:00:01",
+                    "fake_mac2": "de:ad:be:ef:00:02",
+                    "intensity": 10,
+                    "mac_switch_delay": 5,
+                    "duration": 180,
+                    "description": "30s Window - Switch every 5s - Stealth (180s)"
                 },
                 {
                     "fake_mac": "ca:fe:ba:be:00:01",
@@ -455,12 +1012,28 @@
                     "description": "30s Window - Switch every 10s"
                 },
                 {
+                    "fake_mac": "ca:fe:ba:be:00:01",
+                    "fake_mac2": "ca:fe:ba:be:00:02",
+                    "intensity": 10,
+                    "mac_switch_delay": 10,
+                    "duration": 180,
+                    "description": "30s Window - Switch every 10s - Stealth (180s)"
+                },
+                {
                     "fake_mac": "ba:ad:f0:0d:00:01",
                     "fake_mac2": "ba:ad:f0:0d:00:02",
                     "intensity": 8,
                     "mac_switch_delay": 15,
                     "duration": 30,
                     "description": "30s Window - Switch every 15s"
+                },
+                {
+                    "fake_mac": "ba:ad:f0:0d:00:01",
+                    "fake_mac2": "ba:ad:f0:0d:00:02",
+                    "intensity": 8,
+                    "mac_switch_delay": 15,
+                    "duration": 180,
+                    "description": "30s Window - Switch every 15s - Stealth (180s)"
                 },
                 {
                     "fake_mac": "00:11:22:33:44:55",
@@ -485,12 +1058,53 @@
                     "mac_switch_delay": 60,
                     "duration": 180,
                     "description": "3min Window - Switch every 60s"
+                },
+                {
+                    "fake_mac": "random",
+                    "fake_mac2": "",
+                    "intensity": 20,
+                    "mac_switch_delay": 0,
+                    "duration": 180,
+                    "description": "Random MAC Attack - Constant rotation"
+                },
+                {
+                    "fake_mac": "random",
+                    "fake_mac2": "",
+                    "intensity": 20,
+                    "mac_switch_delay": 5,
+                    "duration": 180,
+                    "description": "Random MAC Attack - New identity every 5s"
                 }
             ]
         },
         "ssh_brute_force": {
             "enabled": false,
             "variations": [
+                {
+                    "port": 22,
+                    "users": [
+                        "admin"
+                    ],
+                    "passwords": [
+                        "password"
+                    ],
+                    "delay": 2.0,
+                    "description": "Single user/pass - Very slow - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456"
+                    ],
+                    "delay": 1.5,
+                    "description": "Single user, 2 passwords - Slow - 2s Burst",
+                    "duration": 2
+                },
                 {
                     "port": 22,
                     "users": [
@@ -509,12 +1123,37 @@
                         "admin"
                     ],
                     "passwords": [
+                        "password"
+                    ],
+                    "delay": 3.0,
+                    "description": "Single user/pass - Very slow - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin"
+                    ],
+                    "passwords": [
                         "password",
                         "123456"
                     ],
                     "delay": 1.5,
                     "description": "Single user, 2 passwords - Slow",
                     "duration": 5
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456"
+                    ],
+                    "delay": 2.25,
+                    "description": "Single user, 2 passwords - Slow - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "port": 22,
@@ -538,12 +1177,41 @@
                     ],
                     "passwords": [
                         "password",
+                        "123456"
+                    ],
+                    "delay": 1.5,
+                    "description": "2 users, 2 passwords - Medium - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root"
+                    ],
+                    "passwords": [
+                        "password",
                         "123456",
                         "admin"
                     ],
                     "delay": 1.0,
                     "description": "2 users, 3 passwords - Medium",
                     "duration": 30
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin"
+                    ],
+                    "delay": 1.5,
+                    "description": "2 users, 3 passwords - Medium - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "port": 22,
@@ -560,6 +1228,22 @@
                     "delay": 0.8,
                     "description": "3 users, 3 passwords - Medium-Fast",
                     "duration": 30
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "admin",
+                        "root",
+                        "user"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin"
+                    ],
+                    "delay": 1.2,
+                    "description": "3 users, 3 passwords - Medium-Fast - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "port": 22,
@@ -634,6 +1318,20 @@
                     "port": 2222,
                     "users": [
                         "admin",
+                        "root"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456"
+                    ],
+                    "delay": 1.5,
+                    "description": "Alt SSH port 2222 - Medium - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 2222,
+                    "users": [
+                        "admin",
                         "root",
                         "user"
                     ],
@@ -667,6 +1365,24 @@
                 {
                     "port": 22,
                     "users": [
+                        "admin"
+                    ],
+                    "passwords": [
+                        "password",
+                        "123456",
+                        "admin",
+                        "root",
+                        "test",
+                        "guest",
+                        "user"
+                    ],
+                    "delay": 1.2,
+                    "description": "Single user, 7 passwords - Medium - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
+                    "users": [
                         "admin",
                         "root",
                         "user",
@@ -682,6 +1398,55 @@
                     "delay": 0.4,
                     "description": "6 users, 3 passwords - Fast",
                     "duration": 180
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "root",
+                        "admin",
+                        "user",
+                        "guest",
+                        "test",
+                        "oracle",
+                        "postgres",
+                        "mysql",
+                        "deploy",
+                        "ubuntu"
+                    ],
+                    "passwords": [
+                        "123456",
+                        "password",
+                        "12345678",
+                        "qwerty",
+                        "123456789",
+                        "12345",
+                        "1234",
+                        "111111",
+                        "admin"
+                    ],
+                    "delay": 0.1,
+                    "description": "Top 10 Users/Pass - Very High Intensity Dictionary Attack",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
+                    "users": [
+                        "root",
+                        "admin",
+                        "user",
+                        "guest",
+                        "test"
+                    ],
+                    "passwords": [
+                        "123456",
+                        "password",
+                        "12345678",
+                        "qwerty",
+                        "123456789"
+                    ],
+                    "delay": 0.05,
+                    "description": "Dictionary Attack - Extreme Speed",
+                    "duration": 180
                 }
             ]
         },
@@ -691,8 +1456,26 @@
                 {
                     "port": 80,
                     "connections": 50,
+                    "description": "HTTP - 50 connections - 10s Burst",
+                    "duration": 10
+                },
+                {
+                    "port": 443,
+                    "connections": 50,
+                    "description": "HTTPS - 50 connections - 10s Burst",
+                    "duration": 10
+                },
+                {
+                    "port": 80,
+                    "connections": 50,
                     "description": "HTTP - 50 connections",
                     "duration": 5
+                },
+                {
+                    "port": 80,
+                    "connections": 50,
+                    "description": "HTTP - 50 connections - Stealth (180s)",
+                    "duration": 180
                 },
                 {
                     "port": 80,
@@ -702,15 +1485,33 @@
                 },
                 {
                     "port": 80,
+                    "connections": 100,
+                    "description": "HTTP - 100 connections - Flash Burst (10s)",
+                    "duration": 10
+                },
+                {
+                    "port": 80,
                     "connections": 200,
                     "description": "HTTP - 200 connections",
                     "duration": 180
                 },
                 {
                     "port": 80,
+                    "connections": 200,
+                    "description": "HTTP - 200 connections - Flash Burst (10s)",
+                    "duration": 10
+                },
+                {
+                    "port": 80,
                     "connections": 300,
                     "description": "HTTP - 300 connections",
                     "duration": 180
+                },
+                {
+                    "port": 80,
+                    "connections": 300,
+                    "description": "HTTP - 300 connections - Flash Burst (10s)",
+                    "duration": 10
                 },
                 {
                     "port": 443,
@@ -720,15 +1521,33 @@
                 },
                 {
                     "port": 443,
+                    "connections": 50,
+                    "description": "HTTPS - 50 connections - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 443,
                     "connections": 100,
                     "description": "HTTPS - 100 connections",
                     "duration": 30
                 },
                 {
                     "port": 443,
+                    "connections": 100,
+                    "description": "HTTPS - 100 connections - Flash Burst (10s)",
+                    "duration": 10
+                },
+                {
+                    "port": 443,
                     "connections": 200,
                     "description": "HTTPS - 200 connections",
                     "duration": 180
+                },
+                {
+                    "port": 443,
+                    "connections": 200,
+                    "description": "HTTPS - 200 connections - Flash Burst (10s)",
+                    "duration": 10
                 },
                 {
                     "port": 8080,
@@ -738,9 +1557,21 @@
                 },
                 {
                     "port": 8080,
+                    "connections": 75,
+                    "description": "Alt HTTP - 75 connections - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 8080,
                     "connections": 150,
                     "description": "Alt HTTP - 150 connections",
                     "duration": 30
+                },
+                {
+                    "port": 8080,
+                    "connections": 150,
+                    "description": "Alt HTTP - 150 connections - Flash Burst (10s)",
+                    "duration": 10
                 },
                 {
                     "port": 8080,
@@ -749,16 +1580,453 @@
                     "duration": 180
                 },
                 {
+                    "port": 8080,
+                    "connections": 250,
+                    "description": "Alt HTTP - 250 connections - Flash Burst (10s)",
+                    "duration": 10
+                },
+                {
                     "port": 8443,
                     "connections": 100,
                     "description": "Alt HTTPS - 100 connections",
                     "duration": 30
                 },
                 {
+                    "port": 8443,
+                    "connections": 100,
+                    "description": "Alt HTTPS - 100 connections - Flash Burst (10s)",
+                    "duration": 10
+                },
+                {
                     "port": 3000,
                     "connections": 100,
                     "description": "Dev server - 100 connections",
                     "duration": 30
+                },
+                {
+                    "port": 3000,
+                    "connections": 100,
+                    "description": "Dev server - 100 connections - Flash Burst (10s)",
+                    "duration": 10
+                }
+            ]
+        },
+        "dhcp_starvation": {
+            "enabled": false,
+            "variations": [
+                {
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "Low intensity DHCP starve - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "Low intensity DHCP starve",
+                    "duration": 5
+                },
+                {
+                    "intensity": 20,
+                    "delay": 0.015,
+                    "description": "Low intensity DHCP starve - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Medium intensity DHCP starve",
+                    "duration": 30
+                },
+                {
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Medium intensity DHCP starve - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "intensity": 50,
+                    "delay": 0.015,
+                    "description": "Medium intensity DHCP starve - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High intensity DHCP starve",
+                    "duration": 180
+                },
+                {
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High intensity DHCP starve - Flash Burst (2s)",
+                    "duration": 2
+                }
+            ]
+        },
+        "tcp_rst_injection": {
+            "enabled": false,
+            "variations": [
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "RST injection - HTTP low - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "RST injection - HTTP low",
+                    "duration": 5
+                },
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.015,
+                    "description": "RST injection - HTTP low - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 80,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "RST injection - HTTP medium",
+                    "duration": 30
+                },
+                {
+                    "port": 80,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "RST injection - HTTP medium - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 22,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "RST injection - SSH medium",
+                    "duration": 30
+                },
+                {
+                    "port": 22,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "RST injection - SSH medium - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 22,
+                    "intensity": 20,
+                    "delay": 0.02,
+                    "description": "RST injection - SSH medium - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 443,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "RST injection - HTTPS Low",
+                    "duration": 30
+                },
+                {
+                    "port": 443,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "RST injection - HTTPS Medium",
+                    "duration": 30
+                },
+                {
+                    "port": 443,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "RST injection - HTTPS high",
+                    "duration": 180
+                },
+                {
+                    "port": 443,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "RST injection - HTTPS high - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 8080,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "RST injection - Alt HTTP Low",
+                    "duration": 30
+                },
+                {
+                    "port": 8080,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "RST injection - Alt HTTP Medium",
+                    "duration": 30
+                }
+            ]
+        },
+        "icmp_redirect": {
+            "enabled": false,
+            "variations": [
+                {
+                    "gateway_ip": "10.0.0.100",
+                    "intensity": 5,
+                    "delay": 0.1,
+                    "description": "Slow ICMP redirect - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "gateway_ip": "10.0.0.100",
+                    "intensity": 5,
+                    "delay": 0.1,
+                    "description": "Slow ICMP redirect",
+                    "duration": 30
+                },
+                {
+                    "gateway_ip": "192.168.1.1",
+                    "intensity": 5,
+                    "delay": 0.15,
+                    "description": "Slow ICMP redirect - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "gateway_ip": "10.0.0.100",
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "Medium ICMP redirect",
+                    "duration": 30
+                },
+                {
+                    "gateway_ip": "172.16.0.1",
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "Medium ICMP redirect - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "gateway_ip": "10.0.0.100",
+                    "intensity": 20,
+                    "delay": 0.015,
+                    "description": "Medium ICMP redirect - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "gateway_ip": "10.0.0.100",
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Fast ICMP redirect",
+                    "duration": 180
+                },
+                {
+                    "gateway_ip": "192.168.1.1",
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Fast ICMP redirect - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "gateway_ip": "10.0.0.100",
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High Intensity ICMP redirect",
+                    "duration": 60
+                }
+            ]
+        },
+        "cam_overflow": {
+            "enabled": false,
+            "variations": [
+                {
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "Low CAM flood",
+                    "duration": 30
+                },
+                {
+                    "intensity": 20,
+                    "delay": 0.01,
+                    "description": "Low CAM flood - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Medium CAM flood - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Medium CAM flood",
+                    "duration": 5
+                },
+                {
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Medium CAM flood - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High CAM flood",
+                    "duration": 30
+                },
+                {
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High CAM flood - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "intensity": 200,
+                    "delay": 0.001,
+                    "description": "Extreme CAM flood",
+                    "duration": 180
+                },
+                {
+                    "intensity": 200,
+                    "delay": 0.001,
+                    "description": "Extreme CAM flood - Flash Burst (2s)",
+                    "duration": 2
+                }
+            ]
+        },
+        "smurf": {
+            "enabled": false,
+            "variations": [
+                {
+                    "broadcast_ip": "192.168.1.255",
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "Low smurf - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "broadcast_ip": "10.0.0.255",
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "Low smurf (10.x)",
+                    "duration": 5
+                },
+                {
+                    "broadcast_ip": "172.16.255.255",
+                    "intensity": 10,
+                    "delay": 0.015,
+                    "description": "Low smurf (172.x) - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "broadcast_ip": "192.168.1.255",
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Medium smurf",
+                    "duration": 30
+                },
+                {
+                    "broadcast_ip": "192.168.1.255",
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Medium smurf - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "broadcast_ip": "192.168.1.255",
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High smurf",
+                    "duration": 180
+                },
+                {
+                    "broadcast_ip": "192.168.1.255",
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "High smurf - Flash Burst (2s)",
+                    "duration": 2
+                }
+            ]
+        },
+        "land_attack": {
+            "enabled": false,
+            "variations": [
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "Land attack - HTTP low - 2s Burst",
+                    "duration": 2
+                },
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.01,
+                    "description": "Land attack - HTTP low",
+                    "duration": 5
+                },
+                {
+                    "port": 80,
+                    "intensity": 10,
+                    "delay": 0.015,
+                    "description": "Land attack - HTTP low - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 80,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Land attack - HTTP medium",
+                    "duration": 30
+                },
+                {
+                    "port": 80,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Land attack - HTTP medium - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 443,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Land attack - HTTPS medium",
+                    "duration": 30
+                },
+                {
+                    "port": 443,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Land attack - HTTPS medium - Flash Burst (2s)",
+                    "duration": 2
+                },
+                {
+                    "port": 443,
+                    "intensity": 20,
+                    "delay": 0.015,
+                    "description": "Land attack - HTTPS medium - Stealth (180s)",
+                    "duration": 180
+                },
+                {
+                    "port": 8080,
+                    "intensity": 50,
+                    "delay": 0.005,
+                    "description": "Land attack - Alt HTTP medium",
+                    "duration": 30
+                },
+                {
+                    "port": 22,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "Land attack - SSH high",
+                    "duration": 180
+                },
+                {
+                    "port": 22,
+                    "intensity": 100,
+                    "delay": 0.001,
+                    "description": "Land attack - SSH high - Flash Burst (2s)",
+                    "duration": 2
                 }
             ]
         }

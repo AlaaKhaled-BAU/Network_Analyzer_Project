@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from pathlib import Path
 import requests
 import json
 import os
@@ -36,7 +37,7 @@ if not TOKEN:
     logger.warning("TELEGRAM_BOT_TOKEN not found in .env file! Telegram alerts will be disabled.")
 
 URL_SEND = f"https://api.telegram.org/bot{TOKEN}/sendMessage" if TOKEN else None
-CHAT_IDS_FILE = "chat_ids.json"
+CHAT_IDS_FILE = Path(__file__).parent / "chat_ids.json"
 
 # --- Data Models ---
 class WebhookSetup(BaseModel):

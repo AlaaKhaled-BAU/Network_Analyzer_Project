@@ -27,3 +27,5 @@ chat_ids.json
 github12_24.rar 
 github12_24/ 
 ~$* 
+venv/
+*.rar

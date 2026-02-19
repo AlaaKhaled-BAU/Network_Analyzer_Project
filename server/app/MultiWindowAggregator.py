@@ -38,11 +38,11 @@ class MultiWindowAggregator:
     Outputs one dataset with all window sizes labeled.
     """
 
-    def __init__(self, window_sizes=[5, 30, 180]):
+    def __init__(self, window_sizes=[2, 5, 30, 180]):
         """
         Args:
             window_sizes: List of window sizes in seconds.
-                         Default: [5, 30, 180] for 5s, 30s, 3min
+                         Default: [2, 5, 30, 180] for 2s, 5s, 30s, 3min
         """
         self.window_sizes = sorted(window_sizes)  # Process in order
         self.arp_cache = {}
@@ -256,7 +256,7 @@ class MultiWindowAggregator:
         start = min_ts
         delta = timedelta(seconds=window_size)
 
-        while start < max_ts:
+        while start <= max_ts:
             end = start + delta
             win_df = df[(df["timestamp"] >= start) & (df["timestamp"] < end)]
             if not win_df.empty:
@@ -267,31 +267,64 @@ class MultiWindowAggregator:
 
     # ========== MAIN PIPELINE ==========
 
-    def process_file(self, filepath, label=None, window_sizes=None):
+    def process_dataframe(self, df, label=None, window_sizes=None):
         """
-        Process file with configured or specified window sizes.
+        Process DataFrame directly without reloading from file.
         
         Args:
-            filepath: Path to the raw packet file (CSV/JSON).
+            df: DataFrame with raw packets (must look like loaded data)
             label: Optional attack label override.
             window_sizes: Optional list of window sizes to process (overrides init config).
 
         Returns:
             DataFrame with columns including 'window_size' to distinguish scales
         """
-        df = self.load_raw_packets(filepath)
+        # 1. Normalize timestamp if needed (just like load_raw_packets)
+        if "timestamp" not in df.columns:
+            raise ValueError("Input DataFrame must contain 'timestamp' column")
+
+        # Ensure timestamp is datetime for windowing operations
+        if np.issubdtype(df["timestamp"].dtype, np.number):
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s", errors="coerce")
+        elif not np.issubdtype(df["timestamp"].dtype, np.datetime64):
+             df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
         
+        # 2. Normalize boolean columns if they exist
+        bool_columns = ["tcp_syn", "tcp_ack", "tcp_fin", "tcp_rst", "tcp_psh", "dns_query", "dns_response"]
+        for col in bool_columns:
+            if col in df.columns:
+                # Check if we need to convert strings to bools
+                if df[col].dtype == 'object':
+                    df[col] = df[col].apply(str_to_bool)
+
+        # 3. Fallback DNS detection
+        if "dns_query" in df.columns and "protocol" in df.columns and "dst_port" in df.columns:
+            udp_condition = (df["protocol"] == "UDP")
+            port_condition = df["dst_port"].astype(str).isin(["53", "53.0"])
+            
+            # Make sure dns_query is treated as boolean-like
+            if df["dns_query"].dtype == object:
+                 # It might have been converted above, but just in case
+                 pass
+
+            # Update rows where it looks like DNS but dns_query is False/None
+            # We use loose comparison != True to catch various false-y values
+            mask = udp_condition & port_condition & (df["dns_query"] != True)
+            if mask.any():
+                df.loc[mask, "dns_query"] = True
+
         # Check if attack_label column exists
         has_attack_label = "attack_label" in df.columns
         if has_attack_label:
-            logger.info(f"Using 'attack_label' column from CSV (found {df['attack_label'].nunique()} unique labels)")
+            logger.info(f"Using 'attack_label' column from DataFrame (found {df['attack_label'].nunique()} unique labels)")
         elif label is not None:
             # Use provided label as fallback
             df["attack_label"] = label
             logger.info(f"No 'attack_label' column found, using provided label: '{label}'")
         else:
             # No label available
-            df["attack_label"] = "Unknown"
+            if "attack_label" not in df.columns:
+                df["attack_label"] = "Unknown"
             logger.warning("No 'attack_label' column and no label provided, using 'Unknown'")
 
         all_records = []
@@ -334,6 +367,21 @@ class MultiWindowAggregator:
 
         return out_df
 
+    def process_file(self, filepath, label=None, window_sizes=None):
+        """
+        Process file with configured or specified window sizes.
+        
+        Args:
+            filepath: Path to the raw packet file (CSV/JSON).
+            label: Optional attack label override.
+            window_sizes: Optional list of window sizes to process (overrides init config).
+
+        Returns:
+            DataFrame with columns including 'window_size' to distinguish scales
+        """
+        df = self.load_raw_packets(filepath)
+        return self.process_dataframe(df, label=label, window_sizes=window_sizes)
+
     def save_results(self, df, output_path, fmt="csv"):
         """Save aggregated features to CSV/JSON."""
         output_path = Path(output_path)
@@ -372,6 +420,7 @@ class MultiWindowAggregator:
         out.update(self._arp_features(df))
         out.update(self._dns_features(df, duration))
         out.update(self._slowloris_features(df, duration))
+        out.update(self._dhcp_features(df, duration))
 
         return out
 
@@ -395,27 +444,21 @@ class MultiWindowAggregator:
         unique_dst_ips = int(df["dst_ip"].nunique()) if "dst_ip" in df.columns else 0
         unique_dst_ports = int(df["dst_port"].nunique()) if "dst_port" in df.columns else 0
 
-        # Port hit features for remote connection detection
-        tcp_ports_hit = 0  # All TCP except remote connection ports
-        udp_ports_hit = 0  # All UDP except remote connection ports
-        remote_conn_port_hits = 0  # Remote connection ports: SSH(22), Telnet(23), Rlogin(513), RDP(3389), VNC(5900), X11(6000-6063)
-        
-        if "dst_port" in df.columns and "protocol" in df.columns:
-            tcp_mask = df["protocol"] == "TCP"
-            udp_mask = df["protocol"] == "UDP"
-            
-            # All remote connection ports (to exclude from general tcp/udp counts)
+        # Remote connection port detection
+        remote_conn_port_hits = 0
+        if "dst_port" in df.columns:
             remote_conn_ports = [22, 23, 513, 3389, 5900] + list(range(6000, 6064))
-            remote_conn_mask = df["dst_port"].isin(remote_conn_ports)
-            
-            # TCP ports hit: all TCP packets EXCEPT remote connection ports
-            tcp_ports_hit = int((tcp_mask & ~remote_conn_mask).sum())
-            
-            # UDP ports hit: all UDP packets EXCEPT remote connection ports
-            udp_ports_hit = int((udp_mask & ~remote_conn_mask).sum())
-            
-            # Remote connection port hits: any protocol targeting remote conn ports
-            remote_conn_port_hits = int(remote_conn_mask.sum())
+            remote_conn_port_hits = int(df["dst_port"].isin(remote_conn_ports).sum())
+
+        # L2: Unique source MACs (CAM overflow detection)
+        unique_src_mac_count = 0
+        if "src_mac" in df.columns:
+            unique_src_mac_count = int(df["src_mac"].nunique())
+
+        # L3: Land attack detection (src_ip == dst_ip)
+        land_attack_count = 0
+        if "src_ip" in df.columns and "dst_ip" in df.columns:
+            land_attack_count = int((df["src_ip"] == df["dst_ip"]).sum())
 
         return {
             "packet_count": packet_count,
@@ -430,9 +473,9 @@ class MultiWindowAggregator:
             "arp_count": arp_count,
             "unique_dst_ips": unique_dst_ips,
             "unique_dst_ports": unique_dst_ports,
-            "tcp_ports_hit": tcp_ports_hit,
-            "udp_ports_hit": udp_ports_hit,
             "remote_conn_port_hits": remote_conn_port_hits,
+            "unique_src_mac_count": unique_src_mac_count,
+            "land_attack_count": land_attack_count,
         }
 
     def _tcp_ddos_scan_features(self, df, duration):
@@ -452,13 +495,18 @@ class MultiWindowAggregator:
         tcp_ack_count = int(tcp_ack.sum())
         syn_rate_pps = tcp_syn_count / duration if duration > 0 else 0.0
 
-        if "tcp_syn" in tcp_df.columns and "tcp_ack" in tcp_df.columns:
-            syn_ack_count = int(((tcp_df["tcp_syn"] == True) & (tcp_df["tcp_ack"] == True)).sum())
-        else:
-            syn_ack_count = 0
+        # TCP RST count (RST injection detection)
+        tcp_rst_count = 0
+        if "tcp_rst" in tcp_df.columns:
+            tcp_rst_count = int(tcp_df["tcp_rst"].sum())
 
-        syn_ack_rate_pps = syn_ack_count / duration if duration > 0 else 0.0
-        syn_to_synack_ratio = float(tcp_syn_count / syn_ack_count) if syn_ack_count > 0 else float(tcp_syn_count)
+        # TCP FIN count (FIN scan detection)
+        tcp_fin_count = 0
+        if "tcp_fin" in tcp_df.columns:
+            tcp_fin_count = int(tcp_df["tcp_fin"].sum())
+
+        # RST to SYN ratio (RST injection signature: high RST, low SYN)
+        rst_to_syn_ratio = float(tcp_rst_count / tcp_syn_count) if tcp_syn_count > 0 else float(tcp_rst_count)
 
         if {"dst_ip", "dst_port"}.issubset(tcp_df.columns):
             syn_flows = tcp_df[tcp_df["tcp_syn"] == True][["dst_ip", "dst_port"]].dropna()
@@ -482,7 +530,6 @@ class MultiWindowAggregator:
         else:
             sequential_port_count = 0
 
-        scan_rate_pps = len(tcp_df) / duration if duration > 0 else 0.0
         distinct_targets_count = int(df["dst_ip"].nunique()) if "dst_ip" in df.columns else 0
 
         total_syn = tcp_syn_count
@@ -493,44 +540,35 @@ class MultiWindowAggregator:
         udp_rate_pps = len(udp_df) / duration if duration > 0 else 0.0
         udp_dest_port_count = int(udp_df["dst_port"].nunique()) if "dst_port" in udp_df.columns else 0
 
+        # ICMP Redirect count (type 5 — route hijacking)
+        icmp_redirect_count = 0
+        if "icmp_type" in icmp_df.columns:
+            icmp_redirect_count = int((icmp_df["icmp_type"] == 5).sum())
+
+        # ICMP Broadcast count (Smurf attack — dst_ip ends in .255)
+        icmp_broadcast_count = 0
+        if "dst_ip" in icmp_df.columns:
+            icmp_broadcast_count = int(icmp_df["dst_ip"].astype(str).str.endswith(".255").sum())
+
         return {
             "tcp_syn_count": tcp_syn_count,
             "tcp_ack_count": tcp_ack_count,
             "syn_rate_pps": syn_rate_pps,
-            "syn_ack_rate_pps": syn_ack_rate_pps,
-            "syn_to_synack_ratio": syn_to_synack_ratio,
+            "tcp_rst_count": tcp_rst_count,
+            "tcp_fin_count": tcp_fin_count,
+            "rst_to_syn_ratio": rst_to_syn_ratio,
             "half_open_count": half_open_count,
             "sequential_port_count": sequential_port_count,
-            "scan_rate_pps": scan_rate_pps,
             "distinct_targets_count": distinct_targets_count,
             "syn_only_ratio": syn_only_ratio,
             "icmp_rate_pps": icmp_rate_pps,
             "udp_rate_pps": udp_rate_pps,
             "udp_dest_port_count": udp_dest_port_count,
+            "icmp_redirect_count": icmp_redirect_count,
+            "icmp_broadcast_count": icmp_broadcast_count,
         }
 
     def _bruteforce_features(self, df, duration):
-        if "http_method" in df.columns:
-            http_df = df[df["http_method"].notna()]
-        else:
-            http_df = pd.DataFrame()
-
-        login_attempts = 0
-        if "http_path" in http_df.columns:
-            login_patterns = ["login", "signin", "auth", "authenticate"]
-            login_attempts = int(
-                http_df["http_path"]
-                .astype(str)
-                .str.contains("|".join(login_patterns), case=False, na=False)
-                .sum()
-            )
-
-        failed_login_count = 0
-        if "http_status_code" in http_df.columns:
-            failed_login_count = int(
-                http_df["http_status_code"].astype(str).isin(["401", "403"]).sum()
-            )
-
         if "protocol" in df.columns:
             tcp_df = df[df["protocol"] == "TCP"]
         else:
@@ -543,16 +581,12 @@ class MultiWindowAggregator:
             ssh_attempts = 0
             ftp_attempts = 0
 
-        login_request_rate = (login_attempts / duration) if duration > 0 else 0.0
-        total_auth_attempts = ssh_attempts + ftp_attempts + login_attempts
+        total_auth_attempts = ssh_attempts + ftp_attempts
         auth_attempts_per_min = (total_auth_attempts / (duration / 60.0)) if duration > 0 else 0.0
 
         return {
             "ssh_connection_attempts": ssh_attempts,
             "ftp_connection_attempts": ftp_attempts,
-            "http_login_attempts": login_attempts,
-            "login_request_rate": login_request_rate,
-            "failed_login_count": failed_login_count,
             "auth_attempts_per_min": auth_attempts_per_min,
         }
 
@@ -564,12 +598,9 @@ class MultiWindowAggregator:
             "gratuitous_arp_count": 0,
             "arp_binding_flap_count": 0,
             "arp_reply_without_request_count": 0,
-            # NEW: MAC-per-IP detection features
-            "unique_macs_per_ip_max": 0,       # Max MACs seen for any single IP
-            "avg_macs_per_ip": 0.0,            # Average MACs per IP
-            "duplicate_mac_ips": 0,            # Count of IPs sharing same MAC
-            "mac_ip_ratio": 0.0,               # Ratio of unique MACs to unique IPs
-            "suspicious_mac_changes": 0,       # IPs with more than 1 MAC (spoof indicator)
+            "unique_macs_per_ip_max": 0,
+            "duplicate_mac_ips": 0,
+            "suspicious_mac_changes": 0,
         }
         
         if "protocol" not in df.columns:
@@ -645,13 +676,11 @@ class MultiWindowAggregator:
 
         # Calculate MAC-per-IP features
         unique_macs_per_ip_max = 0
-        avg_macs_per_ip = 0.0
         suspicious_mac_changes = 0
         
         if ip_to_macs:
             mac_counts = [len(macs) for macs in ip_to_macs.values()]
             unique_macs_per_ip_max = max(mac_counts)
-            avg_macs_per_ip = float(sum(mac_counts) / len(mac_counts))
             suspicious_mac_changes = sum(1 for count in mac_counts if count > 1)
         
         # Count IPs sharing same MAC (suspicious)
@@ -659,11 +688,6 @@ class MultiWindowAggregator:
         if mac_to_ips:
             duplicate_mac_ips = sum(len(ips) for ips in mac_to_ips.values() if len(ips) > 1)
         
-        # MAC/IP ratio (should be ~1.0 normally, high = suspicious)
-        unique_macs = len(set().union(*ip_to_macs.values())) if ip_to_macs else 0
-        unique_ips = len(ip_to_macs)
-        mac_ip_ratio = float(unique_macs / unique_ips) if unique_ips > 0 else 0.0
-
         reply_without_request_count = max(0, arp_reply_count - arp_request_count)
 
         return {
@@ -673,9 +697,7 @@ class MultiWindowAggregator:
             "arp_binding_flap_count": binding_flap_count,
             "arp_reply_without_request_count": reply_without_request_count,
             "unique_macs_per_ip_max": unique_macs_per_ip_max,
-            "avg_macs_per_ip": avg_macs_per_ip,
             "duplicate_mac_ips": duplicate_mac_ips,
-            "mac_ip_ratio": mac_ip_ratio,
             "suspicious_mac_changes": suspicious_mac_changes,
         }
 
@@ -688,15 +710,12 @@ class MultiWindowAggregator:
             "avg_subdomain_entropy": 0.0,
             "pct_high_entropy_queries": 0.0,
             "txt_record_count": 0,
-            "avg_answer_size": 0.0,
             "distinct_record_types": 0,
             "avg_query_interval_ms": 0.0,
-            # NEW: Enhanced DNS tunnel detection features
             "avg_subdomain_length": 0.0,
             "max_subdomain_length": 0,
             "avg_label_count": 0.0,
             "dns_to_udp_ratio": 0.0,
-            "udp_port_53_count": 0,
         }
         
         if "dns_query" not in df.columns:
@@ -704,18 +723,11 @@ class MultiWindowAggregator:
 
         dns_df = df[df["dns_query"] == True]
         
-        # Count UDP port 53 packets (even if not flagged as DNS)
-        udp_port_53_count = 0
-        if "protocol" in df.columns and "dst_port" in df.columns:
-            udp_port_53_count = int(
-                ((df["protocol"] == "UDP") & (df["dst_port"].astype(str).isin(["53", "53.0"]))).sum()
-            )
-        
-        if dns_df.empty and udp_port_53_count == 0:
+        if dns_df.empty:
             return default_features
 
         qnames = dns_df["dns_qname"].dropna().astype(str) if "dns_qname" in dns_df.columns else pd.Series([], dtype=str)
-        dns_query_count = max(len(dns_df), udp_port_53_count)  # Use higher count
+        dns_query_count = len(dns_df)
         query_rate_qps = dns_query_count / duration if duration > 0 else 0.0
         unique_qnames_count = int(qnames.nunique()) if not qnames.empty else 0
 
@@ -763,10 +775,6 @@ class MultiWindowAggregator:
             txt_record_count = int((dns_df["dns_qtype"] == 16).sum())
             distinct_record_types = int(dns_df["dns_qtype"].nunique())
 
-        avg_answer_size = 0.0
-        if "dns_answer_size" in dns_df.columns:
-            avg_answer_size = float(dns_df["dns_answer_size"].mean())
-
         avg_query_interval_ms = 0.0
         if len(dns_df) > 1:
             ts_sorted = dns_df["timestamp"].sort_values()
@@ -784,14 +792,12 @@ class MultiWindowAggregator:
             "avg_subdomain_entropy": avg_entropy,
             "pct_high_entropy_queries": pct_high_entropy,
             "txt_record_count": txt_record_count,
-            "avg_answer_size": avg_answer_size,
             "distinct_record_types": distinct_record_types,
             "avg_query_interval_ms": avg_query_interval_ms,
             "avg_subdomain_length": avg_subdomain_len,
             "max_subdomain_length": max_subdomain_len,
             "avg_label_count": avg_labels,
             "dns_to_udp_ratio": dns_to_udp_ratio,
-            "udp_port_53_count": udp_port_53_count,
         }
 
     def _slowloris_features(self, df, duration):
@@ -805,8 +811,10 @@ class MultiWindowAggregator:
         else:
             http_df = pd.DataFrame()
 
-        if {"dst_ip", "dst_port"}.issubset(tcp_df.columns) and not tcp_df.empty:
-            groups = tcp_df.groupby(["dst_ip", "dst_port"])
+        # Group by full 4-tuple to count unique connections (fixed from dst-only)
+        group_cols = ["src_ip", "src_port", "dst_ip", "dst_port"]
+        if set(group_cols).issubset(tcp_df.columns) and not tcp_df.empty:
+            groups = tcp_df.groupby(group_cols)
             open_conn_count = len(groups)
 
             conn_durations = []
@@ -817,7 +825,9 @@ class MultiWindowAggregator:
 
             partial_http_count = 0
             if "tcp_syn" in tcp_df.columns:
-                for (dst_ip, dst_port), g in groups:
+                # Group by dst only for partial HTTP detection (many src ports → one dst)
+                dst_groups = tcp_df.groupby(["dst_ip", "dst_port"])
+                for (dst_ip, dst_port), g in dst_groups:
                     has_syn = bool(g["tcp_syn"].any())
                     has_http = False
                     if "http_method" in g.columns:
@@ -834,22 +844,25 @@ class MultiWindowAggregator:
         else:
             bytes_per_conn = 0.0
 
-        if not http_df.empty:
-            if "http_status_code" in http_df.columns:
-                completed = http_df["http_status_code"].notna().sum()
-            else:
-                completed = 0
-            total_http = len(http_df)
-            request_completion_ratio = float(completed / total_http) if total_http > 0 else 1.0
-        else:
-            request_completion_ratio = 1.0
-
         return {
             "open_conn_count": open_conn_count,
             "avg_conn_duration": avg_conn_duration,
             "bytes_per_conn": bytes_per_conn,
             "partial_http_count": partial_http_count,
-            "request_completion_ratio": request_completion_ratio,
+        }
+
+    def _dhcp_features(self, df, duration):
+        """Extract DHCP features for DHCP starvation detection."""
+        dhcp_discover_count = 0
+        if "dhcp_type" in df.columns:
+            # DHCP message types: 1=Discover, 2=Offer, 3=Request, 4=Decline, 5=ACK
+            dhcp_discover_count = int((df["dhcp_type"] == 1).sum())
+
+        dhcp_rate = dhcp_discover_count / duration if duration > 0 else 0.0
+
+        return {
+            "dhcp_discover_count": dhcp_discover_count,
+            "dhcp_discover_rate": dhcp_rate,
         }
 
 

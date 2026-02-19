@@ -45,7 +45,7 @@ SERVER_URL = os.getenv("SERVER_URL", DEFAULT_SERVER_URL)
 POLL_INTERVAL = 1  # Check for new files every 1 second
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # seconds
-BATCH_SIZE = 1000  # Optimal for PostgreSQL bulk inserts
+BATCH_SIZE = 10000  # Optimal for PostgreSQL bulk inserts
 
 # --- HTTP Session for Connection Pooling ---
 # Using a session reuses TCP connections across requests (keep-alive)
