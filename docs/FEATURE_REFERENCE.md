@@ -25,7 +25,7 @@ These are fundamental traffic metrics used as baseline for all attack detection.
 
 ---
 
-## 🔥 TCP/DDoS/Scan Features (13 columns)
+## 🔥 TCP/DDoS/Scan Features (15 columns)
 
 Critical features for detecting TCP-based attacks and reconnaissance.
 
@@ -43,6 +43,11 @@ Critical features for detecting TCP-based attacks and reconnaissance.
 | `syn_only_ratio` | % traffic that is SYN-only | High % = SYN flood | **SYN Flood** |
 | `icmp_rate_pps` | ICMP packets per second | ICMP flood detection | **Ping Flood**, **Smurf Attack** |
 | `udp_rate_pps` | UDP packets per second | UDP flood detection | **UDP Flood** |
+| `tcp_rst_count` | RST packets sent | High count = RST injection or port closed | **RST Injection**, **Port Scan** |
+| `tcp_fin_count` | FIN packets sent | FIN scan detection | **FIN Scan** |
+| `rst_to_syn_ratio` | RST to SYN ratio | High ratio = closed ports (scan response) | **Port Scan** |
+| `icmp_redirect_count` | ICMP Redirects | Routing manipulation attempt | **MITM**, **ICMP Redirect** |
+| `icmp_broadcast_count` | ICMP to broadcast | Smurf attack amplifier | **Smurf Attack** |
 | `udp_dest_port_count` | Unique UDP dest ports | Random ports = UDP flood | **UDP Flood**, **Amplification** |
 
 ---
@@ -59,6 +64,19 @@ Features for detecting credential-guessing attacks.
 | `login_request_rate` | Login requests per second | Fast attempts = automated attack | **Credential Stuffing** |
 | `failed_login_count` | HTTP 401/403 responses | Many failures = guessing attack | **Brute Force**, **Credential Stuffing** |
 | `auth_attempts_per_min` | Auth attempts per minute | Rate limiting threshold | **All Brute Force variants** |
+
+---
+
+## 🌩️ DHCP & L2 Features (4 columns)
+
+New features for infrastructure attacks.
+
+| Feature | Description | Why Important | Associated Attacks |
+|---------|-------------|---------------|-------------------|
+| `dhcp_discover_count` | DHCP Discover packets | High volume = exhaustion attempt | **DHCP Starvation** |
+| `dhcp_discover_rate` | Discovers per second | Rate-based starvation detection | **DHCP Starvation** |
+| `unique_src_mac_count` | Unique Source MACs | MAC flooding indicator | **CAM Table Overflow** |
+| `land_attack_count` | Src IP == Dst IP | Malformed packet detection | **Land Attack** |
 
 ---
 
@@ -229,6 +247,24 @@ If optimizing for model size/speed, consider removing these:
 | `connection_rate` | ❌ Low - redundant |
 
 **Total Removable:** 6 features → Reduces from 71 to 65 columns
+
+## 🗑️ Deprecated / Removed Features
+
+The following features have been removed from the aggregator logic but may still exist in older database records:
+
+- `syn_ack_rate_pps`
+- `syn_to_synack_ratio` (Replaced by `rst_to_syn_ratio` logic)
+- `scan_rate_pps`
+- `http_login_attempts`
+- `login_request_rate`
+- `failed_login_count`
+- `avg_macs_per_ip`
+- `mac_ip_ratio`
+- `avg_answer_size`
+- `udp_port_53_count`
+- `request_completion_ratio`
+- `tcp_ports_hit`
+- `udp_ports_hit`
 
 ---
 

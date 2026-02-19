@@ -36,7 +36,7 @@ python sender.py                 # Upload only (separate terminal)
 
 ```
 ┌─────────────┐                ┌─────────────┐                ┌─────────────┐
-│ sniffer.py  │ → JSON (5s) → │ sender.py   │ → HTTP POST → │ Server API  │
+│ sniffer.py  │ → JSON (2s) → │ sender.py   │ → HTTP POST → │ Server API  │
 │ (Process 1) │   + .ready    │ (Process 2) │   (JSON)      │  (FastAPI)  │
 └─────────────┘  OR --send    └─────────────┘                └──────┬──────┘
                                                                     │
@@ -47,16 +47,15 @@ python sender.py                 # Upload only (separate terminal)
                                                                     │
                                                           ┌─────────┴─────────┐
                                                           │ PostgreSQL        │
-                                                          │ raw + 5s features │
+                                                          │ raw + 2s/5s featus│
                                                           └─────────┬─────────┘
                                                                     │
-                                             ┌──────────────────────┴──────────────────────┐
                                              │ Background Threads                          │
                                              │                                             │
-                                             │ 1. 5s Prediction (Polling)                  │
-                                             │    [Query Unlabeled] → [ML Predict] → Alert │
+                                             │ 1. 2s Prediction (Inline)                   │
+                                             │    [Ingest] → [Aggregate 2s/5s] → [Predict] │
                                              │                                             │
-                                             │ 2. Cascading & Prediction (Inline)          │
+                                             │ 2. Cascading & Prediction                   │
                                              │    [6× 5s → 30s ] → [ML Predict] → Alert    │
                                              │    [36× 5s → 180s] → [ML Predict] → Alert   │
                                              └─────────────────────────────────────────────┘
@@ -77,15 +76,22 @@ client/logs/
 
 ## ✨ Features
 
-- **Real-Time Detection**: 5-second upload intervals for fast attack detection
-- **Multi-Window Analysis**: Three time windows (5s, 30s, 3min) for comprehensive threat detection
-- **Cascading Aggregation**: 5s windows on ingest; 30s/180s built from DB (requires 6/36 records)
-- **Inline ML Prediction**: `predict_and_alert()` runs immediately after each 30s/180s aggregation
+- **Real-Time Detection**: 2-second upload intervals for ultra-fast attack detection
+- **Multi-Window Analysis**: Four time windows (2s, 5s, 30s, 3min) for comprehensive threat detection
+- **Inline ML Prediction**: Immediate analysis on ingestion (zero latency)
+- **Deep Packet Inspection**: L2 MAC tracking and DHCP analysis
+- **Cascading Aggregation**: 30s/180s windows built efficiently from 5s blocks
 - **Parallelized Processing**: ThreadPoolExecutor processes multiple IPs concurrently
 - **Dual Storage**: Raw packets for forensics + aggregated flows for ML
 - **Retry & Resilience**: Automatic retries with disk fallback during outages
 - **Zero Race Conditions**: Atomic file writes with `.ready` markers
-- **8 Attack Types**: Port Scan, SSH Brute Force, Slowloris, ARP Spoof, DNS Tunnel, SYN/UDP/ICMP Floods
+- **14 Supported Attack Types**:
+  - **Floods**: SYN Flood, UDP Flood, ICMP Flood, Smurf Attack
+  - **Scanning**: Port Scan, FIN Scan, Null Scan (via TCP flags)
+  - **Spoofing**: ARP Spoofing/Poisoning, IP Spoofing, Land Attack
+  - **Application**: Slowloris, DNS Tunneling
+  - **Infrastructure**: DHCP Starvation, CAM Table Overflow
+  - **Other**: TCP RST Injection, ICMP Redirect
 
 ---
 

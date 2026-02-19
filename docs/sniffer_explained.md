@@ -16,7 +16,7 @@
 1. **Captures** packets from all network interfaces using Scapy
 2. **Extracts** 30+ features from each packet (IPs, ports, protocols, etc.)
 3. **Buffers** packets in memory
-4. **Saves** to JSON files every 5 seconds using atomic writes
+4. **Saves** to JSON files every 2 seconds using atomic writes
 5. **Signals** completion with `.ready` marker files
 
 ---
@@ -40,7 +40,7 @@ python sniffer.py [options]
 |----------|-------|---------|-------------|
 | `--list` | `-l` | - | List all network interfaces and exit |
 | `--interfaces` | `-i` | Interactive | Select which interfaces to sniff |
-| `--save-interval` | `-s` | 5 seconds | Time between JSON saves |
+| `--save-interval` | `-s` | 2 seconds | Time between JSON saves |
 | `--buffer-size` | `-b` | 50000 | Max packets before forced save |
 | `--send` | - | Off | Also start sender in background |
 
@@ -67,7 +67,7 @@ python sniffer.py -i 1 --send
 python sniffer.py -i 1 -s 10 -b 100000
 
 # Full example: specific interface, custom settings, with sending
-python sniffer.py -i 2 -s 5 -b 50000 --send
+python sniffer.py -i 2 -s 2 -b 50000 --send
 ```
 
 ### Interface Selection
@@ -101,7 +101,7 @@ packet_summary() → Extract features
        ↓
 PacketBuffer → In-memory buffer
        ↓
-(Every 5 seconds)
+(Every 2 seconds)
        ↓
 save_to_json_atomic() → Write to disk
        ↓
@@ -118,6 +118,8 @@ logs/pending_upload/packets_TIMESTAMP.json.ready
 - `timestamp` - When packet was captured (Unix timestamp)
 - `interface` - Network interface name (e.g., "Ethernet", "Wi-Fi")
 - `length` - Packet size in bytes
+- `src_mac` - Source MAC address
+- `dst_mac` - Destination MAC address
 
 #### IP Layer
 - `src_ip` - Source IP address (IPv4 or IPv6)
@@ -155,6 +157,9 @@ logs/pending_upload/packets_TIMESTAMP.json.ready
 - `http_path` - Request path
 - `http_status_code` - Response status code
 - `http_host` - Host header value
+
+#### DHCP Layer (UDP ports 67/68)
+- `dhcp_type` - Message type (1=Discover, 2=Offer, 3=Request, 5=ACK, etc.)
 
 **How it works:**
 
