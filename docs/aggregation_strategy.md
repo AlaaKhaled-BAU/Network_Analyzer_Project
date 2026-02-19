@@ -3,7 +3,7 @@
 ## 🏗️ Architecture Overview
 
 The system uses a **Cascading Aggregation** approach where:
-1. **5s windows** are generated synchronously during ingestion.
+1. **2s and 5s windows** are generated synchronously (inline) during ingestion.
 2. **30s and 180s windows** are built asynchronously from database-stored 5s records by a background thread.
 
 This ensures that larger time windows contain the **correct amount of historical data** (e.g., a 30s window aggregates 6 complete 5s records from the same `src_ip`).
@@ -16,9 +16,10 @@ This ensures that larger time windows contain the **correct amount of historical
 graph TD
     A[Packets Arrive] --> B[/ingest endpoint/]
     B --> C[Store Raw Packets to DB]
-    B --> D[Generate 5s Window]
-    D --> E[Store 5s Features to DB]
-    E --> F{ML Prediction Background Thread}
+    D[Generate 2s & 5s Windows]
+    D --> E[Store 2s/5s Features to DB]
+    E --> F{Inline Prediction (2s/5s)}
+    F --> G[New Alert?]
     
     subgraph "Background Thread (every 10s)"
         G[Query unique src_ips with 5s data]
@@ -45,7 +46,7 @@ graph TD
 | **Count-Based Triggering** | 30s window requires ≥6 5s records; 180s requires ≥36 5s records. |
 | **Per-IP Grouping** | Aggregation is done per `src_ip` to maintain traffic source granularity. |
 | **Parallelized Processing** | Uses `ThreadPoolExecutor` (4 workers) to process multiple IPs concurrently. |
-| **Inline ML Prediction** | `predict_and_alert()` is called immediately after each 30s/180s record is created. |
+| **Inline ML Prediction** | `predict_and_alert()` is called immediately after EVERY aggregation (2s/5s/30s/180s). |
 | **Duplicate Prevention** | Checks for existing records before inserting to avoid duplicates. |
 
 ---
@@ -54,8 +55,9 @@ graph TD
 
 | Window Size | Source | Purpose |
 |-------------|--------|---------|
-| **5 Seconds** | Raw packets (sync) | Real-time attack detection, immediate dashboard spikes. |
-| **30 Seconds** | 6× 5s records (async) | Standard ML model input, stable traffic profiling. |
+| **2 Seconds** | Raw packets (sync) | Ultra-fast detection, immediate dashboard response. |
+| **5 Seconds** | Raw packets (sync) | Fast detection, standard ML input. |
+| **30 Seconds** | 6× 5s records (async) | Stable traffic profiling. |
 | **180 Seconds** | 36× 5s records (async) | Slow-rate attack detection, persistent threats, capacity planning. |
 
 ---
@@ -73,7 +75,7 @@ graph TD
 ### Ingestion (5s only)
 ```python
 # In _process_packets()
-agg_df = aggregator.process_file(tmp_path, window_sizes=[5])
+agg_df = aggregator.process_dataframe(df, window_sizes=[2, 5])
 ```
 
 ### Cascading Aggregation (Background)

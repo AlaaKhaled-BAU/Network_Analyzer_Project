@@ -71,7 +71,7 @@ BATCH_SIZE = 1000   # Upload 1000 packets per HTTP request
 | Variable | Default | Purpose | Effect of Changing |
 |----------|---------|---------|-------------------|
 | `SERVER_URL` | `http://...` | Server endpoint | Point to different server |
-| `POLL_INTERVAL` | 2 seconds | Check frequency | Lower = faster detection, higher CPU |
+| `POLL_INTERVAL` | 1 second | Check frequency | Lower = faster detection, higher CPU |
 | `MAX_RETRIES` | 3 | Upload attempts | Higher = more resilient, slower failures |
 | `RETRY_DELAY` | 5 seconds | Delay between retries | Higher = less server load |
 | `BATCH_SIZE` | 500 | Packets per request | Larger = fewer requests, bigger payloads |
@@ -298,7 +298,7 @@ def monitor_and_upload():
             last_retry_check = datetime.now()
         
         # 4. Wait before next check
-        time.sleep(POLL_INTERVAL)  # 2 seconds
+        time.sleep(POLL_INTERVAL)  # 1 second
 ```
 
 **Timeline:**

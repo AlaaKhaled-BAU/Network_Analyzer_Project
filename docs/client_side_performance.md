@@ -58,7 +58,7 @@ python sniffer.py -s 10        # Custom save interval of 10 seconds
 **Default Values:**
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `SAVE_INTERVAL` | 5 seconds | Time-based save trigger |
+| `SAVE_INTERVAL` | 2 seconds | Time-based save trigger |
 | `MAX_BUFFER_SIZE` | 50,000 packets | Size-based save trigger |
 
 ---
@@ -235,11 +235,11 @@ python sniffer.py -i 0
 # Save every 10 seconds instead of default 5
 python sniffer.py -s 10
 
-# Save every 2 seconds for more real-time monitoring
+# Save every 2 seconds for more real-time monitoring (Default)
 python sniffer.py -s 2
 ```
 
-**Default:** `5` seconds
+**Default:** `2` seconds
 
 **When to change:**
 - **Increase** (e.g., 30) → Fewer, larger files, less disk I/O
@@ -326,7 +326,7 @@ python sniffer.py -i 2 -s 5 -b 50000 --send
 |----------|-------|---------|-------------|---------|
 | `--list` | `-l` | False | List interfaces and exit | `-l` |
 | `--interfaces` | `-i` | Interactive | Which interfaces to sniff | `-i 1,2` or `-i all` |
-| `--save-interval` | `-s` | 5 seconds | Time between saves | `-s 10` |
+| `--save-interval` | `-s` | 2 seconds | Time between saves | `-s 4` |
 | `--buffer-size` | `-b` | 50000 | Max packets before forced save | `-b 100000` |
 | `--send` | — | False | Also start sender to upload files | `--send` |
 

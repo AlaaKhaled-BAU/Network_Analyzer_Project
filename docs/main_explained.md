@@ -60,17 +60,17 @@ Used for populating charts and tables on page load:
 
 ### **3. ML Threat Detection & Cascading Aggregation**
 *   **Model**: XGBoost (`xgboost_model.json`)
-*   **Prediction Trigger**: Called **inline** immediately after each 30s/180s aggregation completes.
+*   **Prediction Trigger**: Called **inline** immediately after ANY aggregation (2s/5s/30s/180s).
 *   **Background Threads**:
-    1.  `run_predictions`: Fallback thread that processes any unpredicted 5s features (polls every 10s).
-    2.  `run_cascading_aggregation`: Builds 30s/180s windows from 6/36 complete 5s records, then calls ML inline.
+    1.  `run_predictions`: Fallback thread that processes any unpredicted features (polls every 10s).
+    2.  `run_cascading_aggregation`: Builds 30s/180s windows from 2s/5s blocks, then calls ML inline.
 *   **Files**:
     *   `models/xgboost_model.json` (The Brain)
     *   `models/label_encoder.pkl` (The Translator)
 
 ### **4. Database Models (SQLAlchemy)**
-*   **RawPacket**: Full fidelity storage of every frame.
-*   **AggregatedFeature**: Compressed statistical summaries (5s/30s/180s windows).
+*   **RawPacket**: Full fidelity storage (includes L2 MACs & DHCP).
+*   **AggregatedFeature**: Compressed statistical summaries (2s/5s/30s/180s windows).
 *   **DetectedAlert**: Security incidents found by ML.
 *   **Index**: `idx_agg_window_src_start` on `(window_size, src_ip, window_start)` for fast aggregation queries.
 

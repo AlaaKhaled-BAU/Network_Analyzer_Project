@@ -8,7 +8,7 @@ The refactored architecture uses **direct HTTP streaming** from client to server
 
 ```
 ┌─────────────────┐
-│  sniffer.py     │  Captures packets, saves to JSON every 5s
+│  sniffer.py     │  Captures packets, saves to JSON every 2s
 │  (Client)       │
 └────────┬────────┘
          │ JSON files + .ready markers
@@ -21,9 +21,9 @@ The refactored architecture uses **direct HTTP streaming** from client to server
          ▼
 ┌───────────────────────────────────────────────┐
 │  main.py (FastAPI Server)                     │
-│  ├── Stores packets in raw_packets           │
-│  ├── Runs MultiWindowAggregator (5s/30s/3min) │
-│  ├── Stores features in aggregated_features  │
+│  ├── Stores packets in raw_packets (with L2/DHCP data)
+│  ├── Runs MultiWindowAggregator (2s/5s/30s/3min)
+│  ├── Stores features in aggregated_features
 │  └── XGBoost ML predictions → detected_alerts │
 └───────────────────────────────────────────────┘
                          │
@@ -113,7 +113,7 @@ python sniffer.py -i 1 -s 5 -b 50000 --send
 | Option | Default | Description |
 |--------|---------|-------------|
 | `-i` / `--interfaces` | Interactive | Interface selection (1, 1,2,3, or all) |
-| `-s` / `--save-interval` | 5 seconds | JSON save frequency |
+| `-s` / `--save-interval` | 2 seconds | JSON save frequency |
 | `-b` / `--buffer-size` | 50000 | Max packets before forced save |
 | `--send` | Off | Also run sender in background |
 
@@ -135,11 +135,11 @@ Aggregation is handled automatically by `main.py` on packet ingestion.
 
 ### 3. Dual Storage
 - **raw_packets**: Complete packet logs for audit/forensics
-- **aggregated_features**: Multi-window ML features (5s/30s/180s)
+- **aggregated_features**: Multi-window ML features (2s/5s/30s/180s)
 - **detected_alerts**: Security alerts with severity tracking
 
 ### 4. Integrated Aggregation
-- Automatic multi-window aggregation (5s, 30s, 3min) on ingestion
+- Automatic multi-window aggregation (2s/5s/30s/3min) on ingestion
 - XGBoost ML predictions in background thread
 - Severity-based alert generation
 
@@ -168,7 +168,7 @@ Aggregation is handled automatically by `main.py` on packet ingestion.
 
 ### JSON API
 
-- `GET /api/features?window_size=N`: Aggregated features (5/30/180)
+- `GET /api/features?window_size=N`: Aggregated features (2/5/30/180)
 - `GET /api/alerts`: Security alerts
 - `GET /api/protocols`: Protocol distribution
 - `GET /api/top-sources`: Top source IPs
