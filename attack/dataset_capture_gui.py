@@ -20,7 +20,7 @@ from pathlib import Path
 
 # Check for scapy
 try:
-    from scapy.all import sniff, get_if_list, IP, IPv6, TCP, UDP, ICMP, ICMPv6EchoRequest, ARP, DNS, DNSQR, Raw, Ether
+    from scapy.all import sniff, get_if_list, IP, IPv6, TCP, UDP, ICMP, ICMPv6EchoRequest, ARP, DNS, DNSQR, Raw, Ether, BOOTP, DHCP as DHCP_Layer
     SCAPY_AVAILABLE = True
 except ImportError:
     SCAPY_AVAILABLE = False
@@ -33,6 +33,8 @@ DNS_TUNNEL_SERVERS = {
     '1.1.1.1', '1.0.0.1',      # Cloudflare DNS
     '9.9.9.9',                  # Quad9 DNS
     '208.67.222.222', '208.67.220.220',  # OpenDNS
+    '8.26.56.26', '8.26.56.27',          # Comodo DNS
+    '84.200.69.80', '84.200.70.40',      # DNS.Watch
 }
 
 # Theme Colors (matching Attack Simulator)
@@ -104,8 +106,33 @@ class PacketSniffer:
         else:
             return val
     
-    def get_conditional_label(self, src_ip, dst_ip, dst_port=None, protocol=None):
+    def get_conditional_label(self, summary):
         """Apply attack label based on traffic characteristics"""
+        src_ip = summary.get('src_ip')
+        dst_ip = summary.get('dst_ip')
+        protocol = summary.get('protocol')
+        dst_port = summary.get('dst_port')
+        dst_mac = summary.get('dst_mac')
+        icmp_type = summary.get('icmp_type')
+        
+        selected_label = self.attack_label.lower()
+
+        # Signature-based overrides for spoofed/Layer 2 attacks where IPs don't match Attacker IP
+        if 'land' in selected_label and src_ip and src_ip == dst_ip:
+            return self.attack_label
+        if 'smurf' in selected_label and protocol == 'ICMP':
+            return self.attack_label
+        if 'rst' in selected_label and protocol == 'TCP' and 'RST' in str(summary.get('tcp_flags', '')):
+            return self.attack_label
+        if 'dhcp' in selected_label and protocol == 'UDP' and dst_port in [67, '67', 67.0]:
+            return self.attack_label
+        if 'cam' in selected_label and protocol == 'UDP' and str(dst_mac).lower() == 'ff:ff:ff:ff:ff:ff':
+            return self.attack_label
+        if 'arp' in selected_label and protocol == 'ARP':
+            return self.attack_label
+        if 'redirect' in selected_label and protocol == 'ICMP' and icmp_type in [5, '5', 5.0]:
+            return self.attack_label
+
         # Only label traffic if it matches the configured attacker IP
         # User must explicitly set attacker IP (e.g., 127.0.0.1 for loopback attacks)
         if self.attacker_ip:
@@ -115,13 +142,13 @@ class PacketSniffer:
         # Check for DNS tunnel pattern
         if protocol == 'UDP' and dst_port in [53, '53', 53.0]:
             if dst_ip in DNS_TUNNEL_SERVERS:
-                if 'dns_tunnel' in self.attack_label.lower():
+                if 'dns_tunnel' in selected_label:
                     return self.attack_label
                 return 'dns_tunnel'
         
         # Also check src_ip for DNS responses coming back
         if protocol == 'UDP' and src_ip in DNS_TUNNEL_SERVERS:
-            if 'dns_tunnel' in self.attack_label.lower():
+            if 'dns_tunnel' in selected_label:
                 return self.attack_label
             return 'dns_tunnel'
         
@@ -173,6 +200,7 @@ class PacketSniffer:
             'http_path': '',
             'http_status_code': '',
             'http_host': '',
+            'dhcp_type': '',
             'attack_label': ''
         }
         
@@ -255,6 +283,18 @@ class PacketSniffer:
                             summary['dns_answer_size'] = answer_size
                         except:
                             pass
+                
+                # DHCP detection (ports 67/68)
+                if BOOTP in pkt:
+                    try:
+                        dhcp_layer = pkt.getlayer(DHCP_Layer)
+                        if dhcp_layer:
+                            for opt in dhcp_layer.options:
+                                if isinstance(opt, tuple) and opt[0] == 'message-type':
+                                    summary['dhcp_type'] = int(opt[1])
+                                    break
+                    except:
+                        pass
             
             elif ICMP in pkt:
                 icmp = pkt[ICMP]
@@ -332,12 +372,7 @@ class PacketSniffer:
             summary['protocol'] = 'OTHER'
         
         # Apply conditional labeling
-        summary['attack_label'] = self.get_conditional_label(
-            summary['src_ip'],
-            summary['dst_ip'],
-            dst_port=summary.get('dst_port'),
-            protocol=summary.get('protocol')
-        )
+        summary['attack_label'] = self.get_conditional_label(summary)
         
         return {k: self.to_csv_value(v) for k, v in summary.items()}
     
@@ -399,6 +434,7 @@ class PacketSniffer:
                     store=False,
                     iface=interface,
                     timeout=5,
+                    filter="not port 9999",
                     stop_filter=lambda x: self.should_stop_capture()
                 )
         except Exception as e:
@@ -407,7 +443,7 @@ class PacketSniffer:
     
     def periodic_saver(self):
         """Periodically save buffer to CSV"""
-        save_interval = 180
+        save_interval = 10
         
         while self.running and not self.should_stop_capture():
             time.sleep(save_interval)
@@ -419,7 +455,7 @@ class PacketSniffer:
                     self.packet_buffer = []
             
             if packets_to_save:
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
                 filename = os.path.join(self.capture_dir, f"{self.attack_label}_{timestamp}.csv")
                 if self.save_packets_to_csv(packets_to_save, filename):
                     if self.callback:
@@ -453,8 +489,10 @@ class PacketSniffer:
         saver_thread.start()
         self.threads.append(saver_thread)
         
-        # Start a sniffing thread for each interface
+        # Start a sniffing thread for each interface (skip loopback)
         for iface in interfaces:
+            if iface == 'lo':
+                continue
             t = threading.Thread(target=self.sniff_interface, args=(iface,), daemon=True)
             t.start()
             self.threads.append(t)
@@ -468,7 +506,7 @@ class PacketSniffer:
         
         # Save remaining packets
         if self.packet_buffer:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
             filename = os.path.join(self.capture_dir, f"{self.attack_label}_{timestamp}_FINAL.csv")
             if self.save_packets_to_csv(self.packet_buffer, filename):
                 if self.callback:
@@ -591,9 +629,11 @@ class SnifferGUI:
         
         # Attack Label
         ttk.Label(settings_grid, text="🏷 Attack Label:", style="Card.TLabel").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=6)
-        self.attack_label = ttk.Combobox(settings_grid, width=18, font=("Segoe UI", 10),
+        self.attack_label = ttk.Combobox(settings_grid, width=22, font=("Segoe UI", 10),
             values=['syn_flood', 'udp_flood', 'icmp_flood', 'port_scan', 
-                   'dns_tunnel', 'arp_spoof', 'ssh_brute', 'slowloris', 'Normal'])
+                   'dns_tunnel', 'arp_spoof', 'ssh_brute_force', 'slowloris',
+                   'dhcp_starvation', 'tcp_rst_injection', 'icmp_redirect',
+                   'cam_overflow', 'smurf', 'land', 'Normal'])
         self.attack_label.grid(row=1, column=1, sticky="w", padx=6, pady=6)
         self.attack_label.set('syn_flood')
         

